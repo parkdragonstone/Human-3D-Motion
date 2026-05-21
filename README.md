@@ -59,6 +59,57 @@ The pose pipeline expects model files under `pipelines/models`, for example `pip
 
 `node_modules/`, `webapp_data/`, and generated recording/analysis outputs are local artifacts and should not be committed.
 
+## Windows Executable
+
+To create a GPU Windows executable from CMD, place the model files at
+`pipelines/models` first and run one command from the repository root:
+
+```bat
+build_exe_gpu.cmd
+```
+
+The build command creates or reuses the dedicated `baseball-motion-exe` Conda
+environment, normalizes ONNX Runtime to `onnxruntime-gpu`, verifies CUDA pose
+backend selection, installs frontend/build dependencies, builds TypeScript, and
+generates the executable icon from `images/baseball-motion.png`.
+
+To create a CPU Windows executable instead, run:
+
+```bat
+build_exe_cpu.cmd
+```
+
+The CPU build command creates or reuses the dedicated
+`baseball-motion-exe-cpu` Conda environment and verifies OpenVINO CPU pose
+backend selection. Both build commands create:
+
+```text
+dist\BaseballMotion\BaseballMotion.exe
+```
+
+The output is a PyInstaller one-folder build. Keep the files beside the `.exe`
+in `dist\BaseballMotion` together when moving the app.
+
+To create a macOS CPU app, place the model files at `pipelines/models` first
+and run:
+
+```bash
+bash build_macos_cpu.sh
+```
+
+The macOS build command creates or reuses the dedicated
+`baseball-motion-app-cpu` Conda environment, verifies OpenVINO CPU pose backend
+selection, generates an `.icns` icon from `images/baseball-motion.png`, and
+creates:
+
+```text
+dist/BaseballMotion.app
+```
+
+The macOS app is built locally for the architecture of the Python environment
+that runs the build. Code signing and notarization are not part of this build
+command.
+
 ## Run
 
 Start the web app:
@@ -73,7 +124,8 @@ Default URL:
 https://127.0.0.1:5000
 ```
 
-The app uses a self-signed development HTTPS certificate by default. If the browser shows a certificate warning, continue to the site for local use.
+The app uses a self-signed development HTTPS certificate by default. If the
+browser shows a certificate warning, continue to the site for local use.
 
 To run without HTTPS:
 

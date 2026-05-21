@@ -67,6 +67,10 @@ def create_app():
     def index():
         return redirect(url_for("capture_page"))
 
+    @app.get("/app-logo")
+    def app_logo():
+        return send_file(_app_logo_path(), conditional=True)
+
     @app.get("/capture")
     def capture_page():
         phone_draft = phone_service.current_or_create_draft(_base_url())
@@ -133,9 +137,9 @@ def create_app():
 
     @app.get("/analysis")
     def analysis_page():
-        analysis_root = request.args.get("root") or settings.get_analysis_root()
+        analysis_root = request.args.get("root") or capture_service.get_storage_root()
         if request.args.get("root"):
-            analysis_root = settings.set_analysis_root(analysis_root)
+            analysis_root = capture_service.set_storage_root(analysis_root)
         return render_template(
             "analysis.html",
             storage_root=capture_service.get_storage_root(),
@@ -149,9 +153,9 @@ def create_app():
 
     @app.get("/api/analysis/sessions")
     def api_analysis_sessions():
-        root = str(request.args.get("root") or settings.get_analysis_root()).strip()
+        root = str(request.args.get("root") or capture_service.get_storage_root()).strip()
         if root:
-            settings.set_analysis_root(root)
+            root = capture_service.set_storage_root(root)
         return jsonify([_session_to_dict(session) for session in sessions.list_sessions(root)])
 
     @app.post("/api/analysis/session-root/select")
@@ -159,8 +163,8 @@ def create_app():
         data = request.get_json(silent=True) or {}
         requested_root = str(data.get("root") or "").strip()
         if data.get("manual") and requested_root:
-            return jsonify({"root": settings.set_analysis_root(requested_root), "cancelled": False})
-        current_root = settings.get_analysis_root()
+            return jsonify({"root": capture_service.set_storage_root(requested_root), "cancelled": False})
+        current_root = capture_service.get_storage_root()
         try:
             selected_path = _select_directory(current_root)
         except RuntimeError as exc:
@@ -172,7 +176,7 @@ def create_app():
             })
         if selected_path is None:
             return jsonify({"root": current_root, "cancelled": True})
-        return jsonify({"root": settings.set_analysis_root(selected_path), "cancelled": False})
+        return jsonify({"root": capture_service.set_storage_root(selected_path), "cancelled": False})
 
     @app.get("/api/analysis/video")
     def api_analysis_video():
@@ -1394,3 +1398,7 @@ def _static_asset_url(filename: str) -> str:
     static_path = Path(__file__).resolve().parent / "static" / filename
     version = str(int(static_path.stat().st_mtime)) if static_path.is_file() else "0"
     return url_for("static", filename=filename, v=version)
+
+
+def _app_logo_path() -> Path:
+    return Path(__file__).resolve().parents[2] / "images" / "baseball-motion.png"

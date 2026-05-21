@@ -8,6 +8,10 @@
 
 AGENTS.md
 node_modules/
+build/
+dist/
+packaging/app_icon.ico
+packaging/app_icon.icns
 webapp_data/
 recordings/
 plan/
@@ -25,6 +29,8 @@ opensim.log
 *.webm
 *.trc
 *.mot
+6.0
+
 
 # OS/editor noise
 .DS_Store

@@ -54,10 +54,12 @@ body {
 }
 
 .brand-mark {
-  width: 18px;
-  height: 18px;
-  border: 3px solid var(--acid);
-  display: inline-block;
+  width: 28px;
+  height: 28px;
+  display: block;
+  object-fit: cover;
+  border: 1px solid rgba(215, 255, 67, 0.4);
+  border-radius: 4px;
 }
 
 .app-nav nav {

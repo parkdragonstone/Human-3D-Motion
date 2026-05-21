@@ -28,26 +28,8 @@ class JsonSettingsRepository(SettingsRepository):
         path.mkdir(parents=True, exist_ok=True)
         data = self._read()
         data["storage_root"] = str(path)
-        data["analysis_root"] = str(path)
+        data.pop("analysis_root", None)
         self._settings_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-
-    def get_analysis_root(self) -> str:
-        data = self._read()
-        analysis_root = os.environ.get("BASEBALL_MOTION_STORAGE") or data.get("analysis_root")
-        if analysis_root:
-            path = Path(analysis_root).expanduser().resolve()
-        else:
-            path = Path(self.get_storage_root()).resolve()
-        path.mkdir(parents=True, exist_ok=True)
-        return str(path)
-
-    def set_analysis_root(self, analysis_root: str) -> str:
-        path = Path(analysis_root).expanduser().resolve()
-        path.mkdir(parents=True, exist_ok=True)
-        data = self._read()
-        data["analysis_root"] = str(path)
-        self._settings_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-        return str(path)
 
     def get_camera_count(self) -> int:
         data = self._read()
