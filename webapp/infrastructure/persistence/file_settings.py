@@ -14,11 +14,11 @@ class JsonSettingsRepository(SettingsRepository):
 
     def get_storage_root(self) -> str:
         data = self._read()
-        storage_root = data.get("storage_root")
+        storage_root = os.environ.get("BASEBALL_MOTION_STORAGE") or data.get("storage_root")
         if storage_root:
             path = Path(storage_root).expanduser().resolve()
         else:
-            path = Path(os.environ.get("BASEBALL_MOTION_STORAGE", "recordings")).resolve()
+            path = Path("recordings").resolve()
             self.set_storage_root(str(path))
         path.mkdir(parents=True, exist_ok=True)
         return str(path)
@@ -33,7 +33,7 @@ class JsonSettingsRepository(SettingsRepository):
 
     def get_analysis_root(self) -> str:
         data = self._read()
-        analysis_root = data.get("analysis_root")
+        analysis_root = os.environ.get("BASEBALL_MOTION_STORAGE") or data.get("analysis_root")
         if analysis_root:
             path = Path(analysis_root).expanduser().resolve()
         else:

@@ -247,12 +247,17 @@ const kinematicsConfigGroups = [
 ];
 
 const selectConfigOptions: Record<string, string[]> = {
+  "base.motion": ["Pitching", "Hitting"],
   "lifting.interpolation": ["linear", "slinear", "quadratic", "cubic", "none"],
   "lifting.sections_to_keep": ["all", "largest", "first", "last"],
   "lifting.fill_large_gaps_with": ["last_value", "nan", "zeros"],
 };
 
 const configFieldOrder: Record<string, string[]> = {
+  base: [
+    "motion",
+    "frame_range",
+  ],
   pose: [
     "mode",
     "overwrite_pose",

@@ -15,10 +15,17 @@ OpenSim Python API is installed with pip as `opensim>=4.6`. A separate OpenSim G
 
 Choose one environment.
 
-GPU:
+GPU on Windows PowerShell:
 
-```bash
-conda env create -f environment-gpu.yml
+```powershell
+.\scripts\setup_gpu_env.ps1
+conda activate baseball-motion
+```
+
+GPU on Windows CMD:
+
+```bat
+scripts\setup_gpu_env.cmd
 conda activate baseball-motion
 ```
 
@@ -102,11 +109,26 @@ GPU:
 docker compose -f docker/docker-compose.yml --profile gpu up --build
 ```
 
+For Windows wsl Docker phone capture over the LAN, use the launch scripts:
+
+```bat
+.\docker\run_cpu.sh
+.\docker\run_gpu.sh
+```
+
 Open:
 
 ```text
 http://127.0.0.1:5000
 ```
+
+For another device on the same network, use the Docker host LAN address:
+
+```text
+http://<docker-host-lan-ip>:5000
+```
+
+Use the Docker host LAN address, not the container `172.x.x.x` address printed by Flask. Phone camera pages opened from another device need a secure browser context, so set `BASEBALL_MOTION_HTTPS=1` and `BASEBALL_MOTION_PUBLIC_URL=https://<docker-host-lan-ip>:5000` before starting Docker Compose when QR phone capture should use the LAN address. Continue through the self-signed certificate warning for local HTTPS use. If another device cannot open the LAN page, allow inbound TCP port `5000` through the Docker host firewall.
 
 The GPU container requires Docker with NVIDIA Container Toolkit. Both Docker profiles mount local `recordings`, `webapp_data`, and `pipelines/models` directories into the container. Docker-specific files are under `docker/`.
 

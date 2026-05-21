@@ -14,6 +14,7 @@ from typing import Optional
 
 @dataclass
 class BaseConfig:
+    motion: str = "Pitching"
     frame_range: str = "auto"  # "auto" 또는 [start, end]; 변경하지 말 것
 
 
@@ -111,6 +112,7 @@ class AnalysisConfig:
         """기존 dict 기반 파이프라인과 호환되는 dict를 반환한다."""
         return {
             "base": {
+                "motion": self.base.motion,
                 "frame_range": self.base.frame_range,
             },
             "pose": {
@@ -199,6 +201,7 @@ class AnalysisConfig:
 
         return cls(
             base=BaseConfig(
+                motion=base_d.get("motion", "Pitching"),
                 frame_range=base_d.get("frame_range", "auto"),
             ),
             pose=PoseConfig(

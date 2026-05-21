@@ -18,6 +18,9 @@ if __name__ == "__main__":
         logging.getLogger("werkzeug").addFilter(_WerkzeugAccessLogFilter())
     https_value = os.environ.get("BASEBALL_MOTION_HTTPS", "1").lower()
     ssl_context = None if https_value in {"0", "false", "no"} else "adhoc"
+    public_url = os.environ.get("BASEBALL_MOTION_PUBLIC_URL", "").strip()
+    if public_url:
+        print(f"Baseball Motion public URL: {public_url}", flush=True)
     socketio.run(
         app,
         host=os.environ.get("BASEBALL_MOTION_HOST", "0.0.0.0"),

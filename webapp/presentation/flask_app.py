@@ -1027,6 +1027,8 @@ def _read_csv_columns(csv_path: Path) -> dict[str, list[float]]:
 
 
 def _kinematics_event_markers(csv_path: Path, columns: dict[str, list[float]]) -> list[dict[str, float | int | str]]:
+    if not all(f"{key}_time" in columns for key in ("knee_high", "mer", "ball_release")):
+        return []
     recalculated = _recalculate_kinematics_event_markers(csv_path)
     if recalculated:
         return recalculated

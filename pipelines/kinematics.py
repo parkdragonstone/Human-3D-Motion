@@ -507,5 +507,6 @@ def run_kinematics(config_dict, emit_log=None):
             kinematics_filter,
             subject_metadata=sub,
             fps=base.get('fps'),
+            motion=base.get('motion', 'Pitching'),
         )
         _log(f"\tCombined keypoint and kinematics CSV saved to {combined_csv_path.resolve()}\n")

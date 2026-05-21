@@ -25,6 +25,7 @@ def export_combined_kinematics_csv(
     filter_config: dict | None = None,
     subject_metadata: dict | None = None,
     fps: float | int | None = None,
+    motion: str = "Pitching",
 ) -> Path:
     mot_df, in_degrees = _read_mot_dataframe(mot_path)
     trc_df = _read_trc_dataframe(trc_path)
@@ -40,20 +41,22 @@ def export_combined_kinematics_csv(
     combined_df = pd.concat([trc_df, kinematics_df.drop(columns=["time"]), velocity_df], axis=1)
     sign_columns = [column for column in CONVERT_SIGN if column in combined_df.columns]
     combined_df[sign_columns] = combined_df[sign_columns] * -1
-    combined_df = _prepend_subject_metadata(combined_df, subject_metadata)
-    combined_df = _append_pitching_parameters(combined_df, subject_metadata, fps)
+    combined_df = _prepend_subject_metadata(combined_df, subject_metadata, motion)
+    if motion == "Pitching":
+        combined_df = _append_pitching_parameters(combined_df, subject_metadata, fps)
     output_path = session_dir / f"{mot_path.stem}_keypoints_kinematics.csv"
     combined_df.to_csv(output_path, index=False)
     return output_path
 
 
-def _prepend_subject_metadata(df: pd.DataFrame, subject_metadata: dict | None) -> pd.DataFrame:
+def _prepend_subject_metadata(df: pd.DataFrame, subject_metadata: dict | None, motion: str) -> pd.DataFrame:
     if not subject_metadata:
         return df
     metadata = {
         "name": subject_metadata.get("name"),
         "height": subject_metadata.get("height"),
         "weight": subject_metadata.get("weight"),
+        "motion": motion,
         "hand": subject_metadata.get("hand"),
     }
     metadata_df = pd.DataFrame({column: [value] * len(df) for column, value in metadata.items()})
