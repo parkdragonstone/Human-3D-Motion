@@ -1,0 +1,439 @@
+﻿.field-row {
+  display: grid;
+  grid-template-columns: 1.4fr 0.8fr 0.8fr 0.8fr;
+  gap: 12px;
+}
+
+.calibration-setup-form {
+  display: grid;
+  gap: 12px;
+}
+
+.calibration-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.camera-settings-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 18px;
+}
+
+.mode-picker {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  grid-column: 1 / -1;
+  padding: 5px;
+  border: 1px solid rgba(246, 244, 233, 0.16);
+  border-radius: 999px;
+  background: #11161a;
+}
+
+.mode-picker label {
+  min-height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.mode-picker label.is-active {
+  background: var(--acid);
+  color: var(--charcoal);
+}
+
+.mode-picker input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.phone-qr-panel {
+  display: grid;
+  gap: 16px;
+  margin-top: 18px;
+  padding: 18px;
+  border: 1px solid rgba(215, 255, 67, 0.28);
+  border-radius: 16px;
+  background: rgba(8, 11, 14, 0.6);
+}
+
+.phone-qr-panel[hidden],
+[data-sony-setting][hidden],
+[data-phone-setting][hidden],
+[data-intrinsic-fields][hidden],
+[data-extrinsic-fields][hidden],
+[data-board-field][hidden] {
+  display: none;
+}
+
+
+.panel-copy {
+  display: grid;
+  gap: 5px;
+}
+
+.panel-copy span {
+  color: var(--muted);
+}
+
+.phone-qr-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.phone-qr-card {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid rgba(246, 244, 233, 0.16);
+  border-radius: 14px;
+  background: #11161a;
+}
+
+.phone-qr-card img {
+  width: 96px;
+  height: 96px;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.phone-qr-card div {
+  display: grid;
+  gap: 6px;
+}
+
+.phone-qr-card strong {
+  font-size: 22px;
+}
+
+.phone-qr-card span {
+  color: var(--muted);
+  text-transform: none;
+}
+
+.phone-qr-card a {
+  color: var(--acid);
+  text-decoration: none;
+  text-transform: none;
+}
+
+.camera-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 12px;
+  margin: 22px 0;
+}
+
+.camera-tile {
+  display: grid;
+  grid-template-rows: auto auto;
+  gap: 12px;
+  border: 1px solid rgba(246, 244, 233, 0.16);
+  border-radius: 16px;
+  padding: 16px;
+  background: #151a1f;
+}
+
+.camera-tile.is-recording {
+  border-color: var(--recording);
+}
+
+.camera-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.camera-select {
+  display: none;
+}
+
+.camera-index {
+  font-size: 9px;
+  font-weight: 900;
+  text-transform: none;
+}
+
+.live-view-frame {
+  position: relative;
+  overflow: hidden;
+  display: block;
+  height: clamp(260px, 28vw, 360px);
+  border: 1px solid rgba(246, 244, 233, 0.16);
+  border-radius: 12px;
+  background:
+    linear-gradient(135deg, rgba(215, 255, 67, 0.12), rgba(0, 0, 0, 0.2)),
+    #090c0f;
+}
+
+.live-view-frame iframe {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border: 0;
+  background: #090c0f;
+}
+
+.live-view-phone-preview {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  background: #050607;
+}
+
+.live-view-message {
+  height: 100%;
+  display: grid;
+  place-content: center;
+  gap: 10px;
+  padding: 22px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.live-view-message strong {
+  color: var(--acid);
+  font-size: 24px;
+}
+
+.camera-meta {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+}
+
+.camera-name,
+.camera-state {
+  color: var(--muted);
+  text-transform: none;
+}
+
+.camera-meta a {
+  color: var(--acid);
+  font-size: 13px;
+  text-decoration: none;
+  text-transform: none;
+}
+
+
+.capture-action-status {
+  grid-column: 1 / -1;
+  min-height: 46px;
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 10px;
+  color: var(--muted);
+}
+
+.capture-action-status strong {
+  color: var(--ink);
+}
+
+.action-bar {
+  display: grid;
+  grid-template-columns: minmax(170px, 220px) auto;
+  gap: 14px;
+  align-items: center;
+}
+
+.action-bar .button {
+  width: 100%;
+}
+
+.button.record {
+  min-height: 56px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border-radius: 6px;
+  background: var(--acid);
+  color: var(--charcoal);
+}
+
+.button.stop {
+  min-height: 56px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border-radius: 6px;
+  background: var(--recording);
+  color: #fff;
+}
+
+.record-button-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--charcoal);
+}
+
+.button.stop .record-button-dot {
+  background: #fff;
+}
+
+.capture-recording-timer {
+  color: #7f8589;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: clamp(32px, 4vw, 46px);
+  font-weight: 900;
+  letter-spacing: 0;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+
+.session-list {
+  display: grid;
+  gap: 12px;
+}
+
+.session-card {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.035);
+  overflow: hidden;
+}
+
+.session-card-header {
+  min-height: 62px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.session-subject,
+.session-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.session-subject strong {
+  font-size: 16px;
+}
+
+.session-subject span {
+  border: 1px solid rgba(255, 111, 24, 0.5);
+  border-radius: 4px;
+  padding: 4px 8px;
+  background: rgba(255, 111, 24, 0.12);
+  color: #ff6f18;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.session-actions time {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.session-analyze-button,
+.session-delete-button {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 6px;
+  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.session-analyze-button {
+  cursor: pointer;
+}
+
+.session-analyze-button {
+  border: 1px solid #ff5a12;
+  background: #ff5a12;
+  color: #fff;
+}
+
+.session-delete-button {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.session-delete-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.session-video-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.session-video-item {
+  min-height: 68px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.session-video-item:last-child {
+  border-right: 0;
+}
+
+.session-video-item div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.session-video-item strong {
+  overflow: hidden;
+  color: #fff;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-video-item small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.session-camera-tag {
+  flex: 0 0 auto;
+  border-radius: 4px;
+  padding: 6px 8px;
+  background: #ff5a12;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 950;
+}
+
+
+@media (max-width: 980px) {
+  .field-row,
+  .calibration-grid,
+  .camera-settings-form {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+}

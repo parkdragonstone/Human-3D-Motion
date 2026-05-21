@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+
+{% block title %}Capture | Baseball Motion{% endblock %}
+
+{% block head %}
+  <link rel="stylesheet" href="{{ static_asset('css/capture.css') }}">
+  <script defer src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script defer type="module" src="{{ static_asset('dist/capture.js') }}"></script>
+{% endblock %}
+
+{% block content %}
+<section class="hero-panel">
+  <div>
+    <h1>Capture<br>Performance</h1>
+    <p class="hero-copy">Record baseball pitching motion for biomechanical analysis</p>
+  </div>
+</section>
+
+<section class="capture-stack">
+  <div class="work-surface">
+    <div class="section-title">
+      <span>01</span>
+      <h2>Subject and Storage</h2>
+    </div>
+    <form class="storage-form" data-storage-form>
+      <label>
+        Storage root
+        <input id="storageRootInput" name="storage_root" value="{{ storage_root }}" readonly required>
+      </label>
+      <button class="button secondary" type="button" data-select-storage-root>Select Path</button>
+    </form>
+
+    <div class="field-row" data-subject-fields>
+      <label>
+        Name
+        <input name="name" form="captureForm" placeholder="RHB" required>
+      </label>
+      <label>
+        Height cm
+        <input name="height_cm" form="captureForm" type="number" min="80" max="230" value="170" required>
+      </label>
+      <label>
+        Weight kg
+        <input name="weight_kg" form="captureForm" type="number" min="20" max="180" value="70" required>
+      </label>
+      <label>
+        Hand
+        <select name="hand" form="captureForm" required>
+          <option value="right" selected>Right</option>
+          <option value="left">Left</option>
+        </select>
+      </label>
+    </div>
+  </div>
+
+  <div class="work-surface">
+    <div class="section-title with-meta">
+      <div>
+        <span>02</span>
+        <h2>Camera Setup</h2>
+      </div>
+    </div>
+    <form class="camera-settings-form" method="post" action="{{ url_for('set_cameras_form') }}" data-camera-settings-form>
+      <div class="mode-picker" data-capture-mode-picker>
+        <label class="{% if camera_settings.capture_mode == 'sony' %}is-active{% endif %}">
+          <input type="radio" name="capture_mode" value="sony" {% if camera_settings.capture_mode == "sony" %}checked{% endif %}>
+          <span>Sony CCB-WD1</span>
+        </label>
+        <label class="{% if camera_settings.capture_mode == 'phone' %}is-active{% endif %}">
+          <input type="radio" name="capture_mode" value="phone" {% if camera_settings.capture_mode == "phone" %}checked{% endif %}>
+          <span>Phone QR</span>
+        </label>
+      </div>
+      <label data-sony-setting {% if camera_settings.capture_mode != "sony" %}hidden{% endif %}>
+        Camera count
+        <input name="camera_count" type="number" min="1" max="16" value="{{ camera_settings.camera_count }}" required>
+      </label>
+      <label data-sony-setting {% if camera_settings.capture_mode != "sony" %}hidden{% endif %}>
+        CCB-WD1 control URL
+        <input name="ccb_url" value="{{ camera_settings.ccb_url }}" placeholder="http://169.254.200.200/" required>
+      </label>
+      <label data-sony-setting {% if camera_settings.capture_mode != "sony" %}hidden{% endif %}>
+        Live view frame rate
+        <select name="live_view_frame_rate">
+          <option value="low" {% if camera_settings.live_view_frame_rate == "low" %}selected{% endif %}>Low</option>
+          <option value="standard" {% if camera_settings.live_view_frame_rate == "standard" %}selected{% endif %}>Standard</option>
+        </select>
+      </label>
+      <label data-phone-setting {% if camera_settings.capture_mode != "phone" %}hidden{% endif %}>
+        Phone count
+        <input name="phone_camera_count" type="number" min="1" max="16" value="{{ camera_settings.phone_camera_count }}" required>
+      </label>
+      <label data-phone-setting {% if camera_settings.capture_mode != "phone" %}hidden{% endif %}>
+        Sampling rate
+        <select name="phone_frame_rate">
+          {% for fps in [240, 120, 60, 30] %}
+            <option value="{{ fps }}" {% if camera_settings.phone_frame_rate == fps %}selected{% endif %}>{{ fps }} fps</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button class="button secondary" type="submit">Apply Camera Settings</button>
+    </form>
+    <div class="phone-qr-panel" data-phone-panel {% if camera_settings.capture_mode != "phone" %}hidden{% endif %}>
+      <div class="panel-copy">
+        <strong>Phone capture pairing</strong>
+        <span>Scan each QR code on a phone. Recording starts and stops from this PC.</span>
+      </div>
+      <div class="phone-qr-list" id="phoneQrList" data-phone-session-token="{{ phone_draft.token }}">
+        {% for slot in phone_draft.slots %}
+          <article class="phone-qr-card">
+            <img src="{{ slot.qr_data_url }}" alt="{{ slot.camera_label }} QR code">
+            <div>
+              <strong>{{ slot.camera_label }}</strong>
+              <span>{{ camera_settings.phone_frame_rate }} fps - 720p</span>
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+    </div>
+    <form id="captureForm" class="capture-form" method="post" action="{{ url_for('start_capture_form') }}" data-capture-form>
+      <input type="hidden" name="phone_session_token" value="{{ phone_draft.token }}" data-phone-session-token-input>
+      <div class="camera-list" id="cameraList">
+        {% for camera in cameras %}
+          <label class="camera-tile {% if camera.recording %}is-recording{% endif %}">
+            <input class="camera-select" type="checkbox" name="camera_ids" value="{{ camera.camera_id }}" {% if camera.connected %}checked{% else %}disabled{% endif %}>
+            <span class="live-view-frame">
+              {% if camera.connected and camera.live_view_url %}
+                <iframe src="{{ camera.live_view_url }}" title="{{ camera.label }} live view"></iframe>
+              {% else %}
+                <span class="live-view-message">
+                  <strong>{{ camera.label }}</strong>
+                  <span>{{ camera.last_error or "Camera is not connected." }}</span>
+                </span>
+              {% endif %}
+            </span>
+            <span class="camera-meta">
+              <span class="camera-index">{{ camera.label }}</span>
+            </span>
+          </label>
+        {% endfor %}
+      </div>
+
+      <div class="action-bar">
+        <div class="capture-action-status" id="captureState">
+          <span class="status-dot ready"></span>
+          <strong>Ready</strong>
+          <span>Select paired cameras before recording</span>
+        </div>
+        <button
+          class="button {% if active_capture %}stop{% else %}record{% endif %}"
+          type="button"
+          data-capture-action-button
+          data-recording="{% if active_capture %}true{% else %}false{% endif %}"
+        >
+          <span class="record-button-dot"></span>
+          <span data-capture-action-label>{% if active_capture %}Stop{% else %}Record{% endif %}</span>
+        </button>
+        <span class="capture-recording-timer" data-capture-recording-timer>00:00:00</span>
+      </div>
+    </form>
+  </div>
+
+  <div class="dark-panel">
+    <div class="section-title">
+      <span>03</span>
+      <h2>Recent Sessions</h2>
+    </div>
+    <div class="session-list" id="sessionList">
+      {% for session in recent_sessions %}
+        <article class="session-card">
+          <header class="session-card-header">
+            <div class="session-subject">
+              <strong>{{ session.subject.name }}</strong>
+              <span>{{ session.subject.height_cm }}cm</span>
+              <span>{{ session.subject.weight_kg }}kg</span>
+              <span>{{ session.subject.hand|capitalize }}</span>
+            </div>
+            <div class="session-actions">
+              <time>{{ session.display_timestamp }}</time>
+              <a class="session-analyze-button" href="{{ url_for('analysis_page', root=storage_root, session_id=session.session_id) }}">Analyze</a>
+              <button class="session-delete-button" type="button" data-delete-session-id="{{ session.session_id }}">Delete</button>
+            </div>
+          </header>
+          <div class="session-video-list">
+            {% for video in session.videos %}
+              <div class="session-video-item">
+                <span class="session-camera-tag">{{ video.camera_label|upper }}</span>
+                <div>
+                  <strong>{{ video.filename }}</strong>
+                  <small>{{ video.size_label }}</small>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        </article>
+      {% else %}
+        <p class="empty">No capture sessions yet.</p>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,254 @@
+"""TRC에 LSTM(ONNX)으로 추가 마커 좌표를 보강한다."""
+import os
+import copy
+import numpy as np
+
+np.set_printoptions(legacy='1.21')
+import pandas as pd
+import onnxruntime as ort
+import glob
+import logging
+
+from .utilities import natural_sort_key, read_trc
+
+logger = logging.getLogger(__name__)
+
+def add_neck_hip_data(trc_data, markers, header):
+    '''
+    Add neck and midhip data to trc_data if not present.
+    Also update header and markers.
+    '''
+
+    midpoints = {
+        'Neck': ['RShoulder', 'LShoulder'],
+        'Hip': ['RHip', 'LHip']}
+
+    for mk_name, r_l_markers in midpoints.items():
+        if mk_name not in markers:
+            # Add marker name
+            markers.append(mk_name)
+
+            # Update header
+            header[2] = '\t'.join(part if i != 3 else str(len(markers)) for i, part in enumerate(header[2].split('\t')))
+            header[3] = header[3].replace('\t\t\t\n', f'\t\t\t{mk_name}\t\t\t\n')
+            header[4] = ['\t\t'+'\t'.join([f'X{i+1}\tY{i+1}\tZ{i+1}' for i in range(len(markers))]) + '\t\n'][0]
+
+            # update trc_data
+            r_l_data = [trc_data[marker] for marker in r_l_markers]
+            mid_data = pd.DataFrame(sum([data.values for data in r_l_data])/2, columns=[mk_name]*3)
+            trc_data = pd.concat([trc_data, mid_data], axis=1)
+
+    return trc_data, markers, header
+
+
+def getOpenPoseMarkers_lowerExtremity2():
+    feature_markers = [
+        "Neck", "RShoulder", "LShoulder", "RHip", "LHip", "RKnee", "LKnee",
+        "RAnkle", "LAnkle", "RHeel", "LHeel", "RSmallToe", "LSmallToe",
+        "RBigToe", "LBigToe"]
+
+    response_markers = [
+        'r.ASIS_study', 'L.ASIS_study', 'r.PSIS_study',
+        'L.PSIS_study', 'r_knee_study', 'r_mknee_study', 
+        'r_ankle_study', 'r_mankle_study', 'r_toe_study', 
+        'r_5meta_study', 'r_calc_study', 'L_knee_study', 
+        'L_mknee_study', 'L_ankle_study', 'L_mankle_study',
+        'L_toe_study', 'L_calc_study', 'L_5meta_study', 
+        'r_shoulder_study', 'L_shoulder_study', 'C7_study', 
+        'r_thigh1_study', 'r_thigh2_study', 'r_thigh3_study',
+        'L_thigh1_study', 'L_thigh2_study', 'L_thigh3_study',
+        'r_sh1_study', 'r_sh2_study', 'r_sh3_study', 'L_sh1_study',
+        'L_sh2_study', 'L_sh3_study', 'RHJC_study', 'LHJC_study']
+
+    return feature_markers, response_markers
+
+
+def getMarkers_upperExtremity_noPelvis2():
+    feature_markers = [
+        "Neck", "RShoulder", "LShoulder", "RElbow", "LElbow", "RWrist",
+        "LWrist"]
+
+    response_markers = ["r_lelbow_study", "r_melbow_study", "r_lwrist_study",
+                        "r_mwrist_study", "L_lelbow_study", "L_melbow_study",
+                        "L_lwrist_study", "L_mwrist_study"]
+
+    return feature_markers, response_markers
+
+
+def run_markerAugmentation(config_dict, emit_log=None):
+    def _log(text, level='info'):
+        if callable(emit_log):
+            emit_log(text, level)
+        else:
+            logger.info(text)
+
+    # get parameters from Config.toml
+    project_dir = config_dict.get('paths').get('project_dir')
+    pose_3d_dir = os.path.realpath(os.path.join(project_dir, 'pose-3d'))    
+    frame_range = config_dict.get('base').get('frame_range')
+    subject_height = float(config_dict.get('subject').get('height')) / 100 # cm to m
+    subject_mass = float(config_dict.get('subject').get('weight'))
+    feet_on_floor = config_dict.get('lifting').get('feet_on_floor')
+
+    augmenterDir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'MarkerAugmenter')
+    augmenterModelName = 'LSTM'
+    augmenter_model = 'v0.3'
+
+    # Apply all trc files
+    all_trc_files = [f for f in glob.glob(os.path.join(pose_3d_dir, '*.trc')) if augmenterModelName not in f]
+    trc_no_filtering = [f for f in glob.glob(os.path.join(pose_3d_dir, '*.trc')) if
+                        augmenterModelName not in f and 'filt' not in f]
+    trc_filtering = [f for f in glob.glob(os.path.join(pose_3d_dir, '*.trc')) if augmenterModelName not in f and 'filt' in f]
+
+    if len(all_trc_files) == 0:
+        raise ValueError('No trc files found.')
+    if len(trc_filtering) > 0:
+        trc_files = trc_filtering
+    else:
+        trc_files = trc_no_filtering
+    sorted(trc_files, key=natural_sort_key)
+
+    # Calculate subject heights
+    if not type(subject_height) == list: # int or float
+        subject_height = [subject_height]
+    # Get subject masses
+    if not type(subject_mass) == list:
+        subject_mass = [subject_mass]
+
+    for p in range(len(subject_mass)):
+        trc_file = trc_files[p]
+        trc_file_out = os.path.splitext(trc_file)[0] + f'_{augmenterModelName}.trc'
+        
+        # Lower body           
+        augmenterModelType_lower = '{}_lower'.format(augmenter_model)
+        feature_markers_lower, response_markers_lower = getOpenPoseMarkers_lowerExtremity2()
+        # Upper body
+        augmenterModelType_upper = '{}_upper'.format(augmenter_model)
+        feature_markers_upper, response_markers_upper = getMarkers_upperExtremity_noPelvis2()        
+        augmenterModelType_all = [augmenterModelType_lower, augmenterModelType_upper]
+        feature_markers_all = [feature_markers_lower, feature_markers_upper]
+        response_markers_all = [response_markers_lower, response_markers_upper]
+        _log(f'--> Using Stanford {augmenterModelName} {augmenter_model} augmenter model.')
+        
+        # %% Process data.
+        # Import TRC file
+        trc_data, frames_col, time_col, markers, header = read_trc(trc_file)
+
+        # add neck and midhip data if not in file
+        trc_data, markers, header = add_neck_hip_data(trc_data, markers, header)
+
+        # frame range selection
+        f_range = [[frames_col.iloc[0], frames_col.iloc[-1]+1] if (frame_range in ('all', 'auto', []) or frames_col.iloc[0]>frame_range[0] or frames_col.iloc[1]<frame_range[1]) else frame_range][0]
+        frame_nb = f_range[1] - f_range[0]
+        f_index = [frames_col[frames_col==f_range[0]].index[0], frames_col[frames_col==f_range[1]-1].index[0]+1]
+        trc_data = trc_data.iloc[f_index[0]:f_index[1]].reset_index(drop=True)
+        frames_col = frames_col.iloc[f_index[0]:f_index[1]].reset_index(drop=True)
+        time_col = time_col.iloc[f_index[0]:f_index[1]].reset_index(drop=True)
+
+        trc_path_out = trc_file.replace('.trc', '_LSTM.trc')
+        trc_file_out = os.path.basename(trc_path_out)
+        header[0] = header[0].replace(os.path.basename(trc_file), trc_file_out)
+        header[2] = '\t'.join(part if i != 2 else str(frame_nb) for i, part in enumerate(header[2].split('\t')))
+        header[2] = '\t'.join(part if i != 7 else str(frame_nb)+'\n' for i, part in enumerate(header[2].split('\t')))
+
+        # Verify that all feature markers are present in the TRC file.
+        feature_markers_joined = set(feature_markers_all[0]+feature_markers_all[1])
+        missing_markers = list(feature_markers_joined - set(markers))
+        if len(missing_markers) > 0:
+            raise ValueError(f'Marker augmentation requires {missing_markers} markers and they are not present in the TRC file.')
+
+        # Loop over augmenter types to handle separate augmenters for lower and
+        # upper bodies.
+        outputs_all = {}
+        for idx_augm, augmenterModelType in enumerate(augmenterModelType_all):
+            outputs_all[idx_augm] = {}
+            feature_markers = feature_markers_all[idx_augm]
+            response_markers = response_markers_all[idx_augm]
+            
+            augmenterModelDir = os.path.join(augmenterDir, augmenterModelName, 
+                                             augmenterModelType)
+            
+            # %% Pre-process inputs.
+            # Step 1: import .trc file with OpenPose marker trajectories.  
+            trc_data_feature = trc_data[feature_markers]
+
+            # Step 2: Normalize with reference marker position.
+            norm_trc_data_feature = trc_data_feature.values - np.tile(trc_data['Hip'], (1,trc_data_feature.shape[1]//3))
+
+            # Step 3: Normalize with subject's height.
+            norm2_trc_data_feature = copy.deepcopy(norm_trc_data_feature)
+            norm2_trc_data_feature = norm2_trc_data_feature / subject_height[p]
+            
+            # Step 4: Add remaining features.
+            inputs = copy.deepcopy(norm2_trc_data_feature)
+            inputs = np.concatenate(
+                    (inputs, subject_height[p]*np.ones((inputs.shape[0],1))), axis=1)
+            inputs = np.concatenate(
+                    (inputs, subject_mass[p]*np.ones((inputs.shape[0],1))), axis=1)
+                
+            # Step 5: Pre-process data
+            pathMean = os.path.join(augmenterModelDir, "mean.npy")
+            trainFeatures_mean = np.load(pathMean, allow_pickle=True)
+ 
+            pathSTD = os.path.join(augmenterModelDir, "std.npy")
+            trainFeatures_std = np.load(pathSTD, allow_pickle=True)
+
+            inputs = (inputs - trainFeatures_mean) / trainFeatures_std
+                
+            # Step 6: Reshape inputs for LSTM model.
+            inputs = np.reshape(inputs, (1, inputs.shape[0], inputs.shape[1]))
+                
+            # %% Load model and weights, and predict outputs.
+            onnx_path = os.path.join(augmenterModelDir, "model.onnx")
+            # Check if file exists and has valid size
+            if not os.path.exists(onnx_path):
+                raise FileNotFoundError(f"ONNX model file not found: {onnx_path}")
+            file_size = os.path.getsize(onnx_path)
+            if file_size < 1000:  # ONNX files should be at least 1KB
+                raise ValueError(f"ONNX model file appears to be corrupted or empty: {onnx_path} (size: {file_size} bytes)")
+            try:
+                session = ort.InferenceSession(onnx_path)
+            except Exception as e:
+                raise RuntimeError(f"Failed to load ONNX model from {onnx_path}: {e}. The model file may be corrupted. Please re-download or restore the model file.")
+            outputs = session.run(['output_0'], {'inputs': inputs.astype(np.float32)})[0]
+
+            # %% Post-process outputs.
+            # Step 1: Reshape from LSTM output
+            outputs = np.reshape(outputs, (outputs.shape[1], outputs.shape[2]))
+                
+            # Step 2: Un-normalize with subject's height.
+            unnorm_outputs = outputs * subject_height[p]
+            
+            # Step 2: Un-normalize with reference marker position.
+            unnorm2_outputs = unnorm_outputs + np.tile(trc_data['Hip'], (1,unnorm_outputs.shape[1]//3))
+
+
+            # %% Add response markers to trc_data and update markers and header.
+            trc_data_response = pd.DataFrame(unnorm2_outputs, columns=[m for m in response_markers for _ in range(3)])
+            trc_data = pd.concat([trc_data, trc_data_response], axis=1)
+
+            markers += response_markers
+            
+            header[2] = '\t'.join(part if i != 3 else str(len(markers)) for i, part in enumerate(header[2].split('\t')))
+            response_markers_str = '\t\t\t'.join(response_markers)
+            header[3] = header[3].replace('\t\t\t\n', f'\t\t\t{response_markers_str}\t\t\t\n')
+            header[4] = ['\t\t'+'\t'.join([f'X{i+1}\tY{i+1}\tZ{i+1}' for i in range(len(markers))]) + '\t\n'][0]
+            
+        # %% Extract minimum y-position across response markers. This is used
+        # to align feet and floor when visualizing.
+        response_markers_conc = [m for resp in response_markers_all for m in resp]
+        min_y_pos = trc_data[response_markers_conc].iloc[:,1::3].min().min()
+            
+        # %% If offset
+        if feet_on_floor:
+            trc_data.iloc[:,1::3] = trc_data.iloc[:,1::3] - (min_y_pos-0.01)
+            
+        # %% Return augmented .trc file   
+        with open(trc_path_out, 'w') as trc_o:
+            [trc_o.write(line) for line in header]
+            trc_data.insert(0, 'Frame#', frames_col)
+            trc_data.insert(1, 'Time', time_col)
+            trc_data.to_csv(trc_o, sep='\t', index=False, header=None, lineterminator='\n')
+        _log(f'Augmented marker coordinates are stored at {trc_path_out}.')
+            
+    return min_y_pos

@@ -1,0 +1,31 @@
+**__pycache__**
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+AGENTS.md
+node_modules/
+webapp_data/
+recordings/
+plan/
+pipelines/models/
+webapp/presentation/static/dist/
+Users/
+# Runtime logs and local OpenSim outputs
+*.log
+opensim.log
+
+# Local media/session artifacts
+*.mp4
+*.avi
+*.mov
+*.webm
+*.trc
+*.mot
+
+# OS/editor noise
+.DS_Store
+Thumbs.db

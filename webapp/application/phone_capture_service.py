@@ -1,0 +1,232 @@
+from __future__ import annotations
+
+import base64
+import io
+import json
+import mimetypes
+import secrets
+from dataclasses import dataclass
+from pathlib import Path
+from urllib.parse import urljoin
+
+from webapp.domain.entities import CaptureSession
+from webapp.domain.ports import SettingsRepository
+
+
+@dataclass(frozen=True)
+class PhoneSlot:
+    camera_id: str
+    camera_label: str
+    join_url: str
+    qr_data_url: str
+
+
+@dataclass
+class PhoneDraft:
+    token: str
+    slots: list[PhoneSlot]
+
+
+@dataclass(frozen=True)
+class PhoneCalibration:
+    mode: str
+    project_name: str
+    output_dir: str
+    save_camera_labels: set[str]
+
+
+class PhoneCaptureService:
+    def __init__(self, settings: SettingsRepository) -> None:
+        self._settings = settings
+        self._draft: PhoneDraft | None = None
+        self._active_sessions: dict[str, CaptureSession] = {}
+        self._active_calibrations: dict[str, PhoneCalibration] = {}
+
+    def current_or_create_draft(self, base_url: str) -> PhoneDraft:
+        if (
+            self._draft is None
+            or len(self._draft.slots) != self._settings.get_phone_camera_count()
+            or not _draft_matches_base_url(self._draft, base_url)
+        ):
+            self._draft = self.create_draft(base_url)
+        return self._draft
+
+    def create_draft(self, base_url: str) -> PhoneDraft:
+        token = secrets.token_urlsafe(18)
+        slots = [
+            self._slot(base_url, token, idx)
+            for idx in range(1, self._settings.get_phone_camera_count() + 1)
+        ]
+        self._draft = PhoneDraft(token=token, slots=slots)
+        return self._draft
+
+    def settings_payload(self) -> dict:
+        orientation = self._settings.get_phone_orientation()
+        return {
+            "frame_rate": self._settings.get_phone_frame_rate(),
+            "orientation": orientation,
+            "resolution": _resolution_for_orientation(orientation),
+            "camera_count": self._settings.get_phone_camera_count(),
+        }
+
+    def start_session(self, token: str, session: CaptureSession) -> None:
+        self._active_sessions[token] = session
+        self._active_calibrations.pop(token, None)
+
+    def stop_session(self, token: str) -> CaptureSession | None:
+        self._active_calibrations.pop(token, None)
+        return self._active_sessions.get(token)
+
+    def start_calibration(
+        self,
+        token: str,
+        mode: str,
+        project_name: str,
+        output_dir: str,
+        save_camera_labels: set[str],
+    ) -> None:
+        self._active_sessions.pop(token, None)
+        self._active_calibrations[token] = PhoneCalibration(
+            mode=mode,
+            project_name=project_name,
+            output_dir=output_dir,
+            save_camera_labels=save_camera_labels,
+        )
+
+    def stop_calibration(self, token: str) -> PhoneCalibration | None:
+        return self._active_calibrations.get(token)
+
+    def save_upload(
+        self,
+        token: str,
+        camera_label: str,
+        upload,
+        content_type: str,
+        user_agent: str,
+        actual_fps: str | None,
+        actual_width: str | None,
+        actual_height: str | None,
+    ) -> dict:
+        calibration = self._active_calibrations.get(token)
+        if calibration is not None:
+            return self._save_calibration_upload(
+                calibration,
+                camera_label,
+                upload,
+                content_type,
+                user_agent,
+                actual_fps,
+                actual_width,
+                actual_height,
+            )
+
+        session = self._active_sessions.get(token)
+        if session is None:
+            raise ValueError("phone_session_not_active")
+
+        if upload is None:
+            raise ValueError("video_file_required")
+
+        session_dir = Path(session.session_path)
+        session_dir.mkdir(parents=True, exist_ok=True)
+        content_type = content_type or "video/mp4"
+        extension = mimetypes.guess_extension(content_type.split(";")[0]) or ".mp4"
+        if extension == ".m4v":
+            extension = ".mp4"
+        output_path = session_dir / (
+            f"{session.subject.name}_{session.subject.height_cm}_{session.subject.weight_kg}_{session.subject.hand}_"
+            f"{session.timestamp}_{camera_label}{extension}"
+        )
+        upload.save(output_path)
+
+        metadata = {
+            "capture_mode": "phone",
+            "camera_label": camera_label,
+            "requested_fps": self._settings.get_phone_frame_rate(),
+            "orientation": self._settings.get_phone_orientation(),
+            "requested_resolution": _resolution_for_orientation(self._settings.get_phone_orientation()),
+            "content_type": content_type,
+            "user_agent": user_agent,
+            "actual_fps": actual_fps,
+            "actual_width": actual_width,
+            "actual_height": actual_height,
+            "hand": session.subject.hand,
+        }
+        metadata_path = output_path.with_suffix(output_path.suffix + ".json")
+        metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+        return {"path": str(output_path), "metadata_path": str(metadata_path)}
+
+    def _save_calibration_upload(
+        self,
+        calibration: PhoneCalibration,
+        camera_label: str,
+        upload,
+        content_type: str,
+        user_agent: str,
+        actual_fps: str | None,
+        actual_width: str | None,
+        actual_height: str | None,
+    ) -> dict:
+        if camera_label not in calibration.save_camera_labels:
+            return {"skipped": True, "camera_label": camera_label}
+
+        if upload is None:
+            raise ValueError("video_file_required")
+
+        output_dir = Path(calibration.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        content_type = content_type or "video/mp4"
+        extension = mimetypes.guess_extension(content_type.split(";")[0]) or ".mp4"
+        if extension == ".m4v":
+            extension = ".mp4"
+        output_path = output_dir / f"{calibration.mode}_{calibration.project_name}_{camera_label}{extension}"
+        upload.save(output_path)
+
+        metadata = {
+            "capture_mode": "phone_calibration",
+            "calibration_mode": calibration.mode,
+            "project_name": calibration.project_name,
+            "camera_label": camera_label,
+            "content_type": content_type,
+            "user_agent": user_agent,
+            "actual_fps": actual_fps,
+            "actual_width": actual_width,
+            "actual_height": actual_height,
+        }
+        metadata_path = output_path.with_suffix(output_path.suffix + ".json")
+        metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+        return {"path": str(output_path), "metadata_path": str(metadata_path)}
+
+    def _slot(self, base_url: str, token: str, idx: int) -> PhoneSlot:
+        camera_label = f"cam{idx:02d}"
+        join_url = urljoin(base_url, f"phone-capture/{token}/{camera_label}")
+        return PhoneSlot(
+            camera_id=f"phone-{idx:02d}",
+            camera_label=camera_label,
+            join_url=join_url,
+            qr_data_url=_qr_data_url(join_url),
+        )
+
+
+def _qr_data_url(value: str) -> str:
+    try:
+        import qrcode
+        import qrcode.image.svg
+
+        image_factory = qrcode.image.svg.SvgPathImage
+        image = qrcode.make(value, image_factory=image_factory)
+        buffer = io.BytesIO()
+        image.save(buffer)
+        encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+        return f"data:image/svg+xml;base64,{encoded}"
+    except Exception:
+        encoded = base64.b64encode(value.encode("utf-8")).decode("ascii")
+        return f"data:text/plain;base64,{encoded}"
+
+
+def _draft_matches_base_url(draft: PhoneDraft, base_url: str) -> bool:
+    return all(slot.join_url.startswith(base_url) for slot in draft.slots)
+
+
+def _resolution_for_orientation(orientation: str) -> str:
+    return "720x1280" if orientation == "portrait" else "1280x720"

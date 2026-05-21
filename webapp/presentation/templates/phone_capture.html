@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>{{ camera_label }} | Phone Capture</title>
+    <link rel="stylesheet" href="{{ static_asset('css/styles.css') }}">
+    <link rel="stylesheet" href="{{ static_asset('css/phone_capture.css') }}">
+    <script defer src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script>
+      window.phoneCaptureConfig = {
+        token: "{{ session_token }}",
+        cameraLabel: "{{ camera_label }}",
+        frameRate: "{{ phone_settings.frame_rate }}",
+        orientation: "{{ phone_settings.orientation }}",
+        resolution: "{{ phone_settings.resolution }}",
+      };
+    </script>
+    <script defer type="module" src="{{ static_asset('dist/phone_capture.js') }}"></script>
+  </head>
+  <body class="phone-capture-body">
+    <main class="phone-capture-shell" data-orientation="{{ phone_settings.orientation }}">
+      <video id="phonePreview" autoplay playsinline muted></video>
+      <div class="phone-top-bar">
+        <button type="button" data-phone-leave aria-label="Leave session">x</button>
+        <div>
+          <strong>Baseball Pitching</strong>
+          <span>{{ camera_label }} Primary Device</span>
+        </div>
+        <span id="phoneConnectionState">Connecting</span>
+      </div>
+      <div class="phone-side-panel">
+        <div>
+          <strong id="phoneTimer">00:00:00</strong>
+          <span id="phoneClipCount">0 clips</span>
+        </div>
+        <span id="phoneCaptureMeta">{{ phone_settings.frame_rate }} fps - {{ phone_settings.resolution }}</span>
+      </div>
+    </main>
+  </body>
+</html>

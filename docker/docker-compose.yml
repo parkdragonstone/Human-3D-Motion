@@ -1,0 +1,45 @@
+services:
+  baseball-motion-cpu:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.cpu
+    image: baseball-motion:cpu
+    container_name: baseball-motion-cpu
+    profiles: ["cpu"]
+    ports:
+      - "5000:5000"
+    environment:
+      BASEBALL_MOTION_HTTPS: "0"
+      BASEBALL_MOTION_HOST: "0.0.0.0"
+      BASEBALL_MOTION_PORT: "5000"
+    volumes:
+      - ../recordings:/app/recordings
+      - ../webapp_data:/app/webapp_data
+      - ../pipelines/models:/app/pipelines/models:ro
+
+  baseball-motion-gpu:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.gpu
+    image: baseball-motion:gpu
+    container_name: baseball-motion-gpu
+    profiles: ["gpu"]
+    ports:
+      - "5000:5000"
+    environment:
+      BASEBALL_MOTION_HTTPS: "0"
+      BASEBALL_MOTION_HOST: "0.0.0.0"
+      BASEBALL_MOTION_PORT: "5000"
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,video
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - ../recordings:/app/recordings
+      - ../webapp_data:/app/webapp_data
+      - ../pipelines/models:/app/pipelines/models:ro

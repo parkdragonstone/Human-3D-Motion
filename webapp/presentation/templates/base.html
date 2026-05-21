@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Baseball Motion{% endblock %}</title>
+    <link rel="stylesheet" href="{{ static_asset('css/styles.css') }}">
+    {% block head %}{% endblock %}
+  </head>
+  <body>
+    <aside class="app-nav">
+      <a class="brand" href="{{ url_for('capture_page') }}">
+        <span class="brand-mark"></span>
+        <span>Baseball Motion</span>
+      </a>
+      <nav>
+        <a href="{{ url_for('capture_page') }}">Capture</a>
+        <a href="{{ url_for('calibration_page') }}">Calibration</a>
+        <a href="{{ url_for('analysis_page') }}">Analysis</a>
+        <a href="{{ url_for('report_page') }}">Report</a>
+      </nav>
+    </aside>
+    <main class="app-shell">
+      {% block content %}{% endblock %}
+    </main>
+    {% block scripts %}{% endblock %}
+  </body>
+</html>

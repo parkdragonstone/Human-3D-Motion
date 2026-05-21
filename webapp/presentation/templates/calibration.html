@@ -1,0 +1,277 @@
+{% extends "base.html" %}
+
+{% block title %}Calibration | Baseball Motion{% endblock %}
+
+{% block head %}
+  <link rel="stylesheet" href="{{ static_asset('css/capture.css') }}">
+  <link rel="stylesheet" href="{{ static_asset('css/calibration.css') }}">
+  <script defer src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script defer type="module" src="{{ static_asset('dist/calibration.js') }}"></script>
+{% endblock %}
+
+{% block content %}
+<section class="hero-panel compact">
+  <div>
+    <h1>Camera<br>Calibration</h1>
+    <p class="hero-copy">Set up your camera configuration for accurate motion capture</p>
+  </div>
+</section>
+
+<section class="capture-stack">
+  <div class="work-surface">
+    <div class="section-title">
+      <span>01</span>
+      <h2>Project</h2>
+    </div>
+    <form class="storage-form" data-storage-form>
+      <label>
+        Storage root
+        <input id="storageRootInput" name="storage_root" value="{{ storage_root }}" readonly required>
+      </label>
+      <button class="button secondary" type="button" data-select-storage-root>Select Path</button>
+    </form>
+
+    <form class="calibration-setup-form" data-calibration-setup-form>
+      <label>
+        Project Name
+        <input name="project_name" placeholder="bullpen_day01" required>
+      </label>
+    </form>
+  </div>
+
+  <div class="work-surface">
+    <div class="section-title with-meta">
+      <div>
+        <span>02</span>
+        <h2>Camera Setup</h2>
+      </div>
+    </div>
+    <form class="camera-settings-form" method="post" action="{{ url_for('set_cameras_form') }}" data-camera-settings-form>
+      <div class="mode-picker" data-capture-mode-picker>
+        <label class="{% if camera_settings.capture_mode == 'sony' %}is-active{% endif %}">
+          <input type="radio" name="capture_mode" value="sony" {% if camera_settings.capture_mode == "sony" %}checked{% endif %}>
+          <span>Sony CCB-WD1</span>
+        </label>
+        <label class="{% if camera_settings.capture_mode == 'phone' %}is-active{% endif %}">
+          <input type="radio" name="capture_mode" value="phone" {% if camera_settings.capture_mode == "phone" %}checked{% endif %}>
+          <span>Phone QR</span>
+        </label>
+      </div>
+      <label data-sony-setting {% if camera_settings.capture_mode != "sony" %}hidden{% endif %}>
+        Camera count
+        <input name="camera_count" type="number" min="1" max="16" value="{{ camera_settings.camera_count }}" required>
+      </label>
+      <label data-sony-setting {% if camera_settings.capture_mode != "sony" %}hidden{% endif %}>
+        CCB-WD1 control URL
+        <input name="ccb_url" value="{{ camera_settings.ccb_url }}" placeholder="http://169.254.200.200/" required>
+      </label>
+      <label data-sony-setting {% if camera_settings.capture_mode != "sony" %}hidden{% endif %}>
+        Live view frame rate
+        <select name="live_view_frame_rate">
+          <option value="low" {% if camera_settings.live_view_frame_rate == "low" %}selected{% endif %}>Low</option>
+          <option value="standard" {% if camera_settings.live_view_frame_rate == "standard" %}selected{% endif %}>Standard</option>
+        </select>
+      </label>
+      <label data-phone-setting {% if camera_settings.capture_mode != "phone" %}hidden{% endif %}>
+        Phone count
+        <input name="phone_camera_count" type="number" min="1" max="16" value="{{ camera_settings.phone_camera_count }}" required>
+      </label>
+      <label data-phone-setting {% if camera_settings.capture_mode != "phone" %}hidden{% endif %}>
+        Sampling rate
+        <select name="phone_frame_rate">
+          {% for fps in [240, 120, 60, 30] %}
+            <option value="{{ fps }}" {% if camera_settings.phone_frame_rate == fps %}selected{% endif %}>{{ fps }} fps</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button class="button secondary" type="submit">Apply Camera Settings</button>
+    </form>
+    <div class="phone-qr-panel" data-phone-panel {% if camera_settings.capture_mode != "phone" %}hidden{% endif %}>
+      <div class="panel-copy">
+        <strong>Phone capture pairing</strong>
+        <span>Scan each QR code on a phone.</span>
+      </div>
+      <div class="phone-qr-list" id="phoneQrList" data-phone-session-token="{{ phone_draft.token }}">
+        {% for slot in phone_draft.slots %}
+          <article class="phone-qr-card">
+            <img src="{{ slot.qr_data_url }}" alt="{{ slot.camera_label }} QR code">
+            <div>
+              <strong>{{ slot.camera_label }}</strong>
+              <span>{{ camera_settings.phone_frame_rate }} fps - 720p</span>
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+    </div>
+
+    <form class="capture-form" data-calibration-form>
+      <input type="hidden" name="phone_session_token" value="{{ phone_draft.token }}" data-phone-session-token-input>
+      <div class="camera-list" id="cameraList">
+        {% for camera in cameras %}
+          <label class="camera-tile {% if camera.recording %}is-recording{% endif %}">
+            <input class="camera-select" type="checkbox" name="camera_ids" value="{{ camera.camera_id }}" {% if camera.connected %}checked{% else %}disabled{% endif %}>
+            <span class="live-view-frame">
+              {% if camera.connected and camera.live_view_url %}
+                <iframe src="{{ camera.live_view_url }}" title="{{ camera.label }} live view"></iframe>
+              {% else %}
+                <span class="live-view-message">
+                  <strong>{{ camera.label }}</strong>
+                  <span>{{ camera.last_error or "Camera is not connected." }}</span>
+                </span>
+              {% endif %}
+            </span>
+            <span class="camera-meta">
+              <span class="camera-index">{{ camera.label }}</span>
+            </span>
+          </label>
+        {% endfor %}
+      </div>
+
+      <label>
+        Save Camera
+        <select name="calibration_target" data-calibration-target-select>
+          {% for camera in cameras %}
+            <option value="intrinsic:{{ camera.label }}">intrinsic {{ camera.label|lower }}</option>
+          {% endfor %}
+          <option value="extrinsic">extrinsic</option>
+        </select>
+      </label>
+
+      <div class="action-bar">
+        <div class="capture-action-status" id="captureState">
+          <span class="status-dot ready"></span>
+          <strong>Ready</strong>
+          <span>Configure calibration before recording</span>
+        </div>
+        <button
+          class="button {% if active_calibration %}stop{% else %}record{% endif %}"
+          type="button"
+          data-calibration-action-button
+          data-recording="{% if active_calibration %}true{% else %}false{% endif %}"
+        >
+          <span class="record-button-dot"></span>
+          <span data-calibration-action-label>{% if active_calibration %}Stop{% else %}Record{% endif %}</span>
+        </button>
+        <span class="capture-recording-timer" data-calibration-recording-timer>00:00:00</span>
+      </div>
+    </form>
+  </div>
+
+  <div class="work-surface">
+    <div class="section-title">
+      <span>03</span>
+      <h2>Calibration Setup</h2>
+    </div>
+    <form class="calibration-setup-form" data-calibration-detail-form>
+      <label>
+        Calibration
+        <select name="calibration_mode" data-calibration-mode>
+          <option value="intrinsic" selected>Intrinsic</option>
+          <option value="extrinsic">Extrinsic</option>
+        </select>
+      </label>
+      <div class="calibration-grid" data-intrinsic-fields>
+        <label>
+          Calibration Board Type
+          <select name="checker_board_type" data-calibration-board-type>
+            <option value="chessboard" selected>Chessboard</option>
+            <option value="charuco">CharucoBoard</option>
+          </select>
+        </label>
+        <label data-board-field="charuco">
+          ArUco Dictionary
+          <select name="aruco_dictionary">
+            <option value="DICT_4X4_50" selected>DICT_4X4_50</option>
+            <option value="DICT_5X5_100">DICT_5X5_100</option>
+            <option value="DICT_6X6_250">DICT_6X6_250</option>
+          </select>
+        </label>
+        <label data-board-field="chessboard charuco">
+          Square Size mm
+          <input name="checker_board_size_mm" type="number" min="1" value="25">
+        </label>
+        <label data-board-field="charuco">
+          Marker Size mm
+          <input name="marker_size_mm" type="number" min="1" value="18">
+        </label>
+        <label data-board-field="chessboard charuco">
+          Column
+          <input name="checker_board_columns" type="number" min="2" value="9">
+        </label>
+        <label data-board-field="chessboard charuco">
+          Row
+          <input name="checker_board_rows" type="number" min="2" value="6">
+        </label>
+      </div>
+      <div class="calibration-grid" data-extrinsic-fields hidden>
+        <label>
+          Object Points m
+          <textarea name="object_points" rows="6" placeholder="point_name,x,y,z"></textarea>
+        </label>
+        <label class="intrinsic-upload-field">
+          Intrinsic Calibration Upload
+          <span class="file-upload-control">
+            <input name="intrinsic_calibration_file" type="file" accept="application/json,.json">
+          </span>
+        </label>
+      </div>
+    </form>
+  </div>
+
+  <div class="work-surface">
+    <div class="section-title">
+      <span>04</span>
+      <h2>Calibration List</h2>
+    </div>
+    <div class="session-list" id="calibrationList">
+      {% for calibration in calibrations %}
+        <article class="session-card calibration-card">
+          <header class="session-card-header">
+            <div class="session-subject">
+              <strong>{{ calibration.display_name }}</strong>
+              <span>{{ calibration.mode }}</span>
+            </div>
+            <div class="session-actions">
+              <time>{{ calibration.display_updated_at }}</time>
+              <button class="session-analyze-button" type="button" data-run-calibration-folder="{{ calibration.folder_name }}" data-calibration-record-mode="{{ calibration.mode }}">Calibration</button>
+              <button class="session-delete-button" type="button" data-delete-calibration-folder="{{ calibration.folder_name }}">Delete</button>
+            </div>
+          </header>
+          <div class="session-video-list">
+            {% for video in calibration.videos %}
+              <div class="session-video-item">
+                <span class="session-camera-tag">{{ video.camera_label|upper }}</span>
+                <div>
+                  <strong>{{ video.filename }}</strong>
+                  <small>{{ video.size_label }}</small>
+                </div>
+              </div>
+            {% else %}
+              <div class="session-video-item">
+                <span class="session-camera-tag">{{ calibration.mode }}</span>
+                <div>
+                  <strong>No videos found</strong>
+                  <small>{{ calibration.output_dir }}</small>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        </article>
+      {% else %}
+        <p class="empty">No calibration folders yet.</p>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<div class="calibration-modal" data-calibration-modal hidden>
+  <div class="calibration-modal-card" role="dialog" aria-modal="true" aria-labelledby="calibrationModalTitle">
+    <div class="calibration-modal-spinner" data-calibration-modal-spinner></div>
+    <h2 id="calibrationModalTitle" data-calibration-modal-title>Processing Intrinsic Calibration</h2>
+    <div class="calibration-modal-body" data-calibration-modal-body>
+      <p>Processing Intrinsic Calibration</p>
+    </div>
+    <button class="button secondary" type="button" data-calibration-modal-close hidden>Close</button>
+  </div>
+</div>
+{% endblock %}
