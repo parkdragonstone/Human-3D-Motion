@@ -10,49 +10,35 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
-
-@dataclass
-class IntrinsicResult:
-    ok: bool
-    error: str | None = None
-    rms: float | None = None
-    image_size: tuple[int, int] | None = None  # (w,h)
-    camera_matrix: np.ndarray | None = None    # 3x3
-    dist_coeffs: np.ndarray | None = None      # (k,)
-    used_frames: int = 0
-    used_corners: int = 0
-    frames_read: int = 0
-    frames_checked: int = 0
-    frames_found: int = 0
-
-    def to_jsonable(self) -> dict[str, Any]:
-        return {
-            "ok": self.ok,
-            "error": self.error,
-            "rms": self.rms,
-            "image_size": list(self.image_size) if self.image_size else None,
-            "camera_matrix": self.camera_matrix.tolist() if self.camera_matrix is not None else None,
-            "dist_coeffs": self.dist_coeffs.reshape(-1).tolist() if self.dist_coeffs is not None else None,
-            "used_frames": int(self.used_frames),
-            "used_corners": int(self.used_corners),
-            "frames_read": int(self.frames_read),
-            "frames_checked": int(self.frames_checked),
-            "frames_found": int(self.frames_found),
-        }
-
-
-def _ensure_cv2():
-    try:
-        import cv2  # type: ignore
-    except Exception as e:
-        raise RuntimeError(f"OpenCV not available: {e}")
-    return cv2
+from .aruco import (
+    aruco_detector as _aruco_detector,
+    aruco_dict_from_preset as _aruco_dict_from_preset,
+    charuco_detector as _charuco_detector,
+    create_charuco_board as _create_charuco_board,
+    detect_aruco_markers as _detect_aruco_markers,
+    write_debug_video as _write_debug_video,
+)
+from .metadata import (
+    camera_label_from_path as _camera_label_from_path,
+    checker_board_type as _checker_board_type,
+    folder_mode_and_project as _folder_mode_and_project,
+    intrinsic_for_label as _intrinsic_for_label,
+    parse_image_points_by_camera as _parse_image_points_by_camera,
+    parse_object_points as _parse_object_points,
+    read_metadata as _read_metadata,
+    require_calibration_metadata as _require_calibration_metadata,
+    video_files as _video_files,
+)
+from .models import IntrinsicResult
+from .opencv import ensure_cv2 as _ensure_cv2
+from .reprojection import (
+    save_extrinsic_scene_result_images_multi as _save_extrinsic_scene_result_images_multi,
+)
 
 
 def calibrate_intrinsic_from_video(
@@ -585,198 +571,6 @@ def _calibrate_charuco_intrinsic_from_video(
         )
 
 
-def _aruco_dict_from_preset(cv2, preset: str):
-    preset = (preset or "").strip().lower()
-    if preset in ("dict_4x4_50", "aruco_4x4_50", "charuco_4x4_50"):
-        return cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
-    if preset in ("dict_5x5_100", "aruco_5x5_100"):
-        return cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_5X5_100)
-    if preset in ("dict_6x6_250", "aruco_6x6_250"):
-        return cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_6X6_250)
-    # fallback
-    return cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
-
-
-def _create_charuco_board(cv2, squares_x, squares_y, square_size, marker_size, aruco_dict):
-    if hasattr(cv2.aruco, "CharucoBoard_create"):
-        return cv2.aruco.CharucoBoard_create(squares_x, squares_y, square_size, marker_size, aruco_dict)
-    return cv2.aruco.CharucoBoard((squares_x, squares_y), square_size, marker_size, aruco_dict)
-
-
-def _aruco_detector(cv2, aruco_dict):
-    if hasattr(cv2.aruco, "ArucoDetector"):
-        params = cv2.aruco.DetectorParameters()
-        return cv2.aruco.ArucoDetector(aruco_dict, params)
-    return None
-
-
-def _charuco_detector(cv2, board):
-    if hasattr(cv2.aruco, "CharucoDetector"):
-        return cv2.aruco.CharucoDetector(board)
-    return None
-
-
-def _detect_aruco_markers(cv2, detector, gray, aruco_dict):
-    if detector is not None:
-        corners, ids, _rejected = detector.detectMarkers(gray)
-        return corners, ids
-    params = cv2.aruco.DetectorParameters_create()
-    corners, ids, _rejected = cv2.aruco.detectMarkers(gray, aruco_dict, parameters=params)
-    return corners, ids
-
-
-def _write_debug_video(cv2, debug_out_path: str | None, frames) -> None:
-    if not debug_out_path or not frames:
-        return
-    try:
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-        h, w = frames[0].shape[:2]
-        writer = cv2.VideoWriter(debug_out_path, fourcc, 10.0, (w, h))
-        for frame in frames:
-            if frame.shape[0] != h or frame.shape[1] != w:
-                frame = cv2.resize(frame, (w, h))
-            writer.write(frame)
-        writer.release()
-    except Exception:
-        pass
-
-
-def _first_video_frame(cv2, video_path: str):
-    cap = cv2.VideoCapture(str(video_path))
-    try:
-        if not cap.isOpened():
-            return None
-        ok, frame = cap.read()
-        if not ok or frame is None:
-            return None
-        return frame
-    finally:
-        cap.release()
-
-
-def _draw_labeled_points(cv2, frame, points, color, title: str):
-    canvas = frame.copy()
-    for index, point in enumerate(points or [], start=1):
-        try:
-            u = int(round(float(point.get("u"))))
-            v = int(round(float(point.get("v"))))
-        except Exception:
-            continue
-        cv2.circle(canvas, (u, v), 8, color, -1, lineType=cv2.LINE_AA)
-        cv2.circle(canvas, (u, v), 12, (255, 255, 255), 2, lineType=cv2.LINE_AA)
-        cv2.putText(
-            canvas,
-            str(point.get("id", index)),
-            (u + 10, v - 10),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.6,
-            (255, 255, 255),
-            2,
-            cv2.LINE_AA,
-        )
-    cv2.putText(
-        canvas,
-        title,
-        (18, 32),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.9,
-        (215, 255, 67),
-        2,
-        cv2.LINE_AA,
-    )
-    return canvas
-
-
-def _project_object_points(cv2, intr: dict[str, Any], object_points: list[dict[str, Any]], rvec_value, tvec_value):
-    K = np.asarray(intr.get("camera_matrix"), dtype=np.float64)
-    D = np.asarray(intr.get("dist_coeffs"), dtype=np.float64).reshape(-1, 1)
-    rvec_value = np.asarray(rvec_value, dtype=np.float64).reshape(-1)
-    tvec_value = np.asarray(tvec_value, dtype=np.float64).reshape(-1)
-    if rvec_value.size != 3 or tvec_value.size != 3:
-        return None
-    rvec = rvec_value.reshape(3, 1)
-    tvec = tvec_value.reshape(3, 1)
-    obj = np.asarray([[float(p.get("x")), float(p.get("y")), float(p.get("z"))] for p in object_points], dtype=np.float64).reshape(-1, 3)
-    img_pts, _ = cv2.projectPoints(obj, rvec, tvec, K, D)
-    projected = img_pts.reshape(-1, 2)
-    return [
-        {"id": point.get("id", index), "u": float(projected[index, 0]), "v": float(projected[index, 1])}
-        for index, point in enumerate(object_points)
-    ]
-
-
-def _draw_projection_overlay(cv2, frame, actual_points, projected_points, title: str):
-    canvas = frame.copy()
-    actual_map = {}
-    for point in actual_points or []:
-        pid = point.get("id")
-        if pid is not None:
-            actual_map[str(pid)] = point
-    for index, projected in enumerate(projected_points or [], start=1):
-        try:
-            u = int(round(float(projected.get("u"))))
-            v = int(round(float(projected.get("v"))))
-        except Exception:
-            continue
-        pid = projected.get("id", index)
-        actual = actual_map.get(str(pid))
-        if actual is not None:
-            try:
-                au = int(round(float(actual.get("u"))))
-                av = int(round(float(actual.get("v"))))
-                cv2.line(canvas, (au, av), (u, v), (255, 255, 255), 1, cv2.LINE_AA)
-                cv2.circle(canvas, (au, av), 7, (80, 200, 80), -1, lineType=cv2.LINE_AA)
-                cv2.circle(canvas, (u, v), 8, (255, 255, 255), 2, lineType=cv2.LINE_AA)
-                cv2.putText(canvas, str(pid), (u + 10, v - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2, cv2.LINE_AA)
-            except Exception:
-                pass
-        else:
-            cv2.circle(canvas, (u, v), 8, (255, 255, 255), 2, lineType=cv2.LINE_AA)
-    cv2.putText(canvas, title, (18, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (215, 255, 67), 2, cv2.LINE_AA)
-    cv2.putText(canvas, "green=clicked  white=reprojection", (18, 62), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (230, 230, 230), 1, cv2.LINE_AA)
-    return canvas
-
-
-def _save_extrinsic_scene_result_images_multi(
-    video_by_label: dict[str, Path],
-    intrinsics_by_label: dict[str, dict[str, Any]],
-    image_points_by_camera: dict[str, list[dict[str, Any]]],
-    object_points: list[dict[str, Any]],
-    extrinsic: dict[str, Any],
-) -> dict[str, str] | None:
-    cv2 = _ensure_cv2()
-    result_images: dict[str, str] = {}
-    first_video = next(iter(video_by_label.values()), None)
-    if first_video is None:
-        return None
-    extrinsic_ok = bool(extrinsic.get("ok"))
-
-    def _write(image, name: str) -> str:
-        out_path = first_video.parent / name
-        cv2.imwrite(str(out_path), image)
-        return str(out_path)
-
-    for label, video in video_by_label.items():
-        frame = _first_video_frame(cv2, str(video))
-        points = image_points_by_camera.get(label, [])
-        if frame is None:
-            continue
-        intrinsic = intrinsics_by_label.get(label)
-        rvec = extrinsic.get(f"rvec_{label}")
-        tvec = extrinsic.get(f"tvec_{label}")
-        reproj = _project_object_points(cv2, intrinsic, object_points, rvec, tvec) if extrinsic_ok and intrinsic else None
-        if reproj is not None:
-            overlay = _draw_projection_overlay(cv2, frame, points, reproj, f"{label.upper()} REPROJECTION")
-        else:
-            title = f"{label.upper()} REPROJECTION UNAVAILABLE"
-            if not extrinsic_ok and extrinsic.get("error"):
-                title = f"{title}: {extrinsic.get('error')}"
-            overlay = _draw_labeled_points(cv2, frame, points, (80, 80, 255), title)
-        result_images[f"{label}_reprojection"] = _write(overlay, f"extrinsic_{label}_reprojection.jpg")
-
-    return result_images or None
-
-
 def _estimate_marker_poses_in_frame(cv2, gray, camera_matrix, dist_coeffs, aruco_dict, marker_length_mm: float):
     params = cv2.aruco.DetectorParameters()
     detector = cv2.aruco.ArucoDetector(aruco_dict, params)
@@ -1246,132 +1040,6 @@ def calibrate_extrinsic_scene_from_points(
         "reproj_rms_cam2_cm": rms2_cm,
         "point_ids": common,
     }
-
-
-def _folder_mode_and_project(folder: Path) -> tuple[str, str]:
-    parts = folder.name.split("_", 2)
-    if len(parts) == 3 and parts[0] == "CALIB" and parts[1] in {"INTR", "EXTR"}:
-        return parts[1], parts[2]
-    raise ValueError(f"bad_calibration_folder_name: {folder.name}")
-
-
-def _intrinsic_for_label(bundle: dict[str, Any], camera_label: str) -> dict[str, Any] | None:
-    label = camera_label.lower()
-    candidates = [
-        bundle.get("intrinsics", {}).get(label) if isinstance(bundle.get("intrinsics"), dict) else None,
-        bundle.get(label),
-        bundle.get(f"intrinsic_{label}"),
-        bundle.get(label.upper()),
-        bundle.get(f"intrinsic_{label.upper()}"),
-    ]
-    for candidate in candidates:
-        if isinstance(candidate, dict) and candidate.get("camera_matrix") is not None:
-            return candidate
-    return None
-
-
-def _parse_object_points(value) -> list[dict[str, Any]]:
-    if isinstance(value, list):
-        return [point for point in value if isinstance(point, dict)]
-    points: list[dict[str, Any]] = []
-    for index, line in enumerate(str(value or "").splitlines()):
-        parts = [part.strip() for part in line.split(",") if part.strip()]
-        if len(parts) == 3:
-            point_id = index
-            coords = parts
-        elif len(parts) >= 4:
-            point_id = parts[0]
-            coords = parts[1:4]
-        else:
-            continue
-        try:
-            points.append({
-                "id": point_id,
-                "x": float(coords[0]),
-                "y": float(coords[1]),
-                "z": float(coords[2]),
-            })
-        except ValueError:
-            continue
-    return points
-
-
-def _parse_image_points(value) -> list[dict[str, Any]]:
-    if not isinstance(value, list):
-        return []
-    points: list[dict[str, Any]] = []
-    for item in value:
-        if not isinstance(item, dict):
-            continue
-        try:
-            points.append({
-                "id": item.get("id"),
-                "u": float(item.get("u")),
-                "v": float(item.get("v")),
-            })
-        except (TypeError, ValueError):
-            continue
-    return points
-
-
-def _parse_image_points_by_camera(metadata: dict[str, Any], camera_labels: list[str]) -> dict[str, list[dict[str, Any]]]:
-    raw = metadata.get("image_points_by_camera")
-    points_by_camera: dict[str, list[dict[str, Any]]] = {}
-    if isinstance(raw, dict):
-        for label, points in raw.items():
-            normalized = str(label).lower()
-            points_by_camera[normalized] = _parse_image_points(points)
-
-    for index, label in enumerate(camera_labels, start=1):
-        if label not in points_by_camera:
-            points_by_camera[label] = _parse_image_points(metadata.get(f"image_points_cam{index}"))
-    return points_by_camera
-
-
-def _checker_board_type(value: str) -> str:
-    normalized = str(value or "auto").strip().lower()
-    aliases = {
-        "auto": "chessboard",
-        "sb": "chessboard",
-        "standard": "chessboard",
-        "chess": "chessboard",
-        "chessboard": "chessboard",
-        "charuco": "charuco",
-        "charucoboard": "charuco",
-    }
-    if normalized in aliases:
-        return aliases[normalized]
-    raise ValueError(f"unknown_checker_board_type: {value}")
-
-
-def _read_metadata(folder: Path) -> dict[str, Any]:
-    metadata_path = folder / "calibration.json"
-    if not metadata_path.is_file():
-        return {}
-    return json.loads(metadata_path.read_text(encoding="utf-8"))
-
-
-def _require_calibration_metadata(metadata: dict[str, Any]) -> None:
-    required = ["checker_board_columns", "checker_board_rows", "checker_board_size_mm"]
-    missing = [key for key in required if metadata.get(key) in (None, "")]
-    if missing:
-        raise ValueError(f"calibration_metadata_missing: {', '.join(missing)}")
-
-
-def _video_files(folder: Path) -> list[Path]:
-    return sorted(
-        path for path in folder.iterdir()
-        if path.is_file()
-        and path.suffix.lower() in {".mp4", ".mov", ".webm", ".avi"}
-        and not path.stem.lower().startswith("intrinsic_debug_")
-    )
-
-
-def _camera_label_from_path(path: Path) -> str:
-    import re
-
-    match = re.search(r"(cam\d+)$", path.stem, re.IGNORECASE)
-    return match.group(1).lower() if match else path.stem.lower()
 
 
 def main() -> None:

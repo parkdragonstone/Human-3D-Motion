@@ -10,6 +10,7 @@ from flask import Flask, jsonify, redirect, render_template, request, send_file,
 from flask_socketio import SocketIO
 
 from webapp.application.analysis_pipeline_service import AnalysisPipelineService
+from webapp.application.analysis_result_service import AnalysisResultService
 from webapp.application.calibration_service import CalibrationService
 from webapp.application.capture_service import CaptureService
 from webapp.application.phone_capture_service import PhoneCaptureService
@@ -17,6 +18,9 @@ from webapp.domain.entities import SubjectInfo
 from webapp.infrastructure.camera.mode_camera_controller import ModeCameraController
 from webapp.infrastructure.camera.phone_camera_controller import PhoneCameraController
 from webapp.infrastructure.camera.url_camera_controller import UrlCameraController
+from webapp.infrastructure.analysis.pipeline_analysis_runner import PipelineAnalysisRunner
+from webapp.infrastructure.analysis.pipeline_analysis_result_gateway import PipelineAnalysisResultGateway
+from webapp.infrastructure.analysis.pipeline_calibration_runner import PipelineCalibrationRunner
 from webapp.infrastructure.persistence.file_session_catalog import FileSessionCatalog
 from webapp.infrastructure.persistence.file_settings import JsonSettingsRepository
 
@@ -42,9 +46,10 @@ def create_app():
     sessions = FileSessionCatalog()
     camera_controller = _camera_controller_from_env(settings)
     capture_service = CaptureService(camera_controller, sessions, settings)
-    analysis_service = AnalysisPipelineService()
+    analysis_service = AnalysisPipelineService(PipelineAnalysisRunner())
+    analysis_result_service = AnalysisResultService(PipelineAnalysisResultGateway())
     phone_service = PhoneCaptureService(settings)
-    calibration_service = CalibrationService(settings)
+    calibration_service = CalibrationService(settings, PipelineCalibrationRunner())
     analysis_jobs: dict[str, dict] = {}
     capture_service.configure_cameras(
         settings.get_camera_count(),
@@ -258,7 +263,7 @@ def create_app():
             if not filename or "/" in filename or "\\" in filename:
                 raise ValueError("invalid_trc_file")
             trc_path = Path(session.session_path) / "pose-3d" / filename
-            return jsonify(_pose3d_data_from_trc(trc_path))
+            return jsonify(analysis_result_service.pose3d_data_from_trc(trc_path))
         except Exception as exc:
             return jsonify({"error": str(exc)}), 400
 
@@ -268,7 +273,7 @@ def create_app():
             session = _analysis_session_from_request(sessions)
             camera_label = str(request.args.get("camera_label") or "")
             frame = int(request.args.get("frame") or 0)
-            return jsonify(_keypoint_frame_from_json(session.session_path, camera_label, frame))
+            return jsonify(analysis_result_service.keypoint_frame_from_json(session.session_path, camera_label, frame))
         except Exception as exc:
             return jsonify({"error": str(exc)}), 400
 
@@ -289,7 +294,7 @@ def create_app():
                 keypoints = data.get("people")
             if not isinstance(keypoints, list):
                 raise ValueError("people_keypoints_required")
-            _save_keypoint_frame_to_json(session.session_path, camera_label, frame, keypoints)
+            analysis_result_service.save_keypoint_frame_to_json(session.session_path, camera_label, frame, keypoints)
             return jsonify({"status": "saved"})
         except Exception as exc:
             return jsonify({"error": str(exc)}), 400
@@ -305,7 +310,7 @@ def create_app():
             if session is None:
                 raise ValueError("session_not_found")
             camera_label = str(data.get("camera_label") or "")
-            pose_video_path = _render_pose_video_from_keypoints(session, camera_label)
+            pose_video_path = analysis_result_service.render_pose_video_from_keypoints(session, camera_label)
             return jsonify({"status": "rendered", "pose_video_path": str(pose_video_path)})
         except Exception as exc:
             return jsonify({"error": str(exc)}), 400
@@ -314,17 +319,17 @@ def create_app():
     def api_analysis_kinematics():
         try:
             session = _analysis_session_from_request(sessions)
-            csv_path = _latest_kinematics_csv_file(Path(session.session_path))
+            csv_path = analysis_result_service.latest_kinematics_csv_file(Path(session.session_path))
             if csv_path is None:
                 return jsonify({"available": False, "signals": [], "unit": "deg"})
-            columns = _read_csv_columns(csv_path)
+            columns = analysis_result_service.read_csv_columns(csv_path)
             signals = [signal for signal in _kinematics_signals() if signal["key"] in columns]
             return jsonify({
                 "available": True,
                 "file": csv_path.name,
                 "unit": "deg",
                 "signals": signals,
-                "events": _kinematics_event_markers(csv_path, columns),
+                "events": _kinematics_event_markers(csv_path, columns, analysis_result_service),
             })
         except Exception as exc:
             return jsonify({"error": str(exc)}), 400
@@ -337,10 +342,10 @@ def create_app():
             signal_map = {item["key"]: item for item in _kinematics_signals()}
             if signal not in signal_map:
                 raise ValueError("invalid_signal")
-            csv_path = _latest_kinematics_csv_file(Path(session.session_path))
+            csv_path = analysis_result_service.latest_kinematics_csv_file(Path(session.session_path))
             if csv_path is None:
                 raise ValueError("kinematics_csv_not_found")
-            columns = _read_csv_columns(csv_path)
+            columns = analysis_result_service.read_csv_columns(csv_path)
             if signal not in columns:
                 raise ValueError("signal_not_found")
             return jsonify({
@@ -789,207 +794,6 @@ def _analysis_session_from_request(sessions):
     return session
 
 
-def _pose3d_data_from_trc(trc_path: Path) -> dict:
-    if not trc_path.is_file() or trc_path.suffix.lower() != ".trc":
-        raise ValueError("trc_file_not_found")
-    import math
-    from pipelines.utilities import read_trc
-
-    coordinates, _frames_col, time_col, markers, header = read_trc(trc_path)
-    fps = 30.0
-    try:
-        fps = float(header[2].split("\t")[0])
-    except Exception:
-        pass
-
-    def safe_float(value):
-        try:
-            number = float(value)
-        except (TypeError, ValueError):
-            return None
-        return round(number, 4) if math.isfinite(number) else None
-
-    frames = []
-    for _, row in coordinates.iterrows():
-        values = row.tolist()
-        frame_points = []
-        for marker_index in range(len(markers)):
-            offset = marker_index * 3
-            frame_points.append([
-                safe_float(values[offset] if offset < len(values) else None),
-                safe_float(values[offset + 1] if offset + 1 < len(values) else None),
-                safe_float(values[offset + 2] if offset + 2 < len(values) else None),
-            ])
-        frames.append(frame_points)
-
-    return {
-        "file": trc_path.name,
-        "markers": markers,
-        "fps": fps,
-        "num_frames": len(frames),
-        "time": [safe_float(value) for value in time_col.tolist()],
-        "frames": frames,
-    }
-
-
-def _normalized_pose_camera_label(label: str) -> str:
-    import re
-
-    match = re.search(r"cam0*(\d+)$", str(label).lower())
-    return f"cam{int(match.group(1))}" if match else str(label).strip().lower()
-
-
-def _keypoint_json_path(session_path: str, camera_label: str, frame: int) -> Path:
-    pose_label = _normalized_pose_camera_label(camera_label)
-    if not pose_label:
-        raise ValueError("camera_label_required")
-    if frame < 0:
-        raise ValueError("invalid_frame")
-    path = Path(session_path) / "pose" / f"{pose_label}_json" / f"{pose_label}_{frame:06d}.json"
-    if not path.is_file():
-        raise ValueError("keypoint_json_not_found")
-    return path
-
-
-def _keypoint_names(count: int) -> list[str]:
-    halpe26 = [
-        "Nose", "LEye", "REye", "LEar", "REar", "LShoulder", "RShoulder", "LElbow", "RElbow",
-        "LWrist", "RWrist", "LHip", "RHip", "LKnee", "RKnee", "LAnkle", "RAnkle", "Head",
-        "Neck", "Hip", "LBigToe", "RBigToe", "LSmallToe", "RSmallToe", "LHeel", "RHeel",
-    ]
-    return [halpe26[index] if index < len(halpe26) else f"Keypoint {index}" for index in range(count)]
-
-
-def _keypoint_frame_from_json(session_path: str, camera_label: str, frame: int) -> dict:
-    import json
-    import math
-
-    path = _keypoint_json_path(session_path, camera_label, frame)
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    people = payload.get("people") or []
-    people_keypoints = []
-    max_keypoints = 0
-    for person_index, person in enumerate(people):
-        if not isinstance(person, dict):
-            continue
-        raw_keypoints = person.get("pose_keypoints_2d") or []
-        keypoints = []
-        for index in range(0, len(raw_keypoints), 3):
-            keypoints.append({
-                "x": _json_number(raw_keypoints[index] if index < len(raw_keypoints) else None, math),
-                "y": _json_number(raw_keypoints[index + 1] if index + 1 < len(raw_keypoints) else None, math),
-                "score": _json_number(raw_keypoints[index + 2] if index + 2 < len(raw_keypoints) else None, math),
-            })
-        max_keypoints = max(max_keypoints, len(keypoints))
-        people_keypoints.append({"person_index": person_index, "keypoints": keypoints})
-    return {
-        "camera_label": _normalized_pose_camera_label(camera_label),
-        "frame": frame,
-        "file": path.name,
-        "keypoint_names": _keypoint_names(max_keypoints),
-        "people": people_keypoints,
-    }
-
-
-def _json_number(value, math_module) -> float | None:
-    if value is None or value == "":
-        return None
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    return number if math_module.isfinite(number) else None
-
-
-def _save_keypoint_frame_to_json(session_path: str, camera_label: str, frame: int, people_keypoints: list) -> None:
-    import json
-    import math
-
-    path = _keypoint_json_path(session_path, camera_label, frame)
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    people = payload.setdefault("people", [])
-    if not people:
-        people.append({})
-    for person_payload in people_keypoints:
-        if not isinstance(person_payload, dict):
-            raise ValueError("invalid_person_keypoints")
-        person_index = int(person_payload.get("person_index", 0))
-        while len(people) <= person_index:
-            people.append({})
-        flattened = []
-        for point in person_payload.get("keypoints") or []:
-            if not isinstance(point, dict):
-                raise ValueError("invalid_keypoint")
-            for key in ("x", "y", "score"):
-                value = point.get(key)
-                if value is None or value == "":
-                    flattened.append(None)
-                    continue
-                number = float(value)
-                flattened.append(number if math.isfinite(number) else None)
-        people[person_index]["pose_keypoints_2d"] = flattened
-    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-
-
-def _render_pose_video_from_keypoints(session, camera_label: str) -> Path:
-    import json
-    import numpy as np
-    from pipelines.utilities import draw_keypts, draw_skel, setup_video, transcode_to_h264
-
-    pose_label = _normalized_pose_camera_label(camera_label)
-    video = next((item for item in session.videos if _normalized_pose_camera_label(item.camera_label) == pose_label), None)
-    if video is None:
-        raise ValueError("video_not_found")
-
-    session_path = Path(session.session_path)
-    json_dir = session_path / "pose" / f"{pose_label}_json"
-    if not json_dir.is_dir():
-        raise ValueError("keypoint_json_dir_not_found")
-    output_dir = session_path / "pose"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / f"{pose_label}_pose.mp4"
-    temp_path = output_dir / f"{pose_label}_pose_tmp.mp4"
-
-    cap, writer, _width, _height, _fps = setup_video(Path(video.path), temp_path, True)
-    frame_index = 0
-    try:
-        while True:
-            success, frame = cap.read()
-            if not success:
-                break
-            json_path = json_dir / f"{pose_label}_{frame_index:06d}.json"
-            if json_path.is_file():
-                payload = json.loads(json_path.read_text(encoding="utf-8"))
-                keypoints = []
-                scores = []
-                for person in payload.get("people") or []:
-                    if not isinstance(person, dict):
-                        continue
-                    raw = np.asarray(person.get("pose_keypoints_2d") or [], dtype=float)
-                    if raw.size == 0 or raw.size % 3 != 0:
-                        continue
-                    points = raw.reshape((-1, 3))
-                    keypoints.append(points[:, :2])
-                    scores.append(points[:, 2])
-                if keypoints:
-                    keypoints_array = np.asarray(keypoints, dtype=float)
-                    scores_array = np.asarray(scores, dtype=float)
-                    frame = draw_keypts(frame, keypoints_array[:, :, 0], keypoints_array[:, :, 1], scores_array, cmap_str="RdYlGn")
-                    frame = draw_skel(frame, keypoints_array[:, :, 0], keypoints_array[:, :, 1])
-            writer.write(frame)
-            frame_index += 1
-    finally:
-        cap.release()
-        if writer is not None:
-            writer.release()
-
-    transcode_to_h264(temp_path)
-    if output_path.exists():
-        output_path.unlink()
-    temp_path.replace(output_path)
-    return output_path
-
-
 def _latest_mot_file(session_path: Path) -> Path | None:
     kinematics_dir = session_path / "kinematics"
     if not kinematics_dir.is_dir():
@@ -1000,40 +804,14 @@ def _latest_mot_file(session_path: Path) -> Path | None:
     return max(mot_files, key=lambda path: path.stat().st_mtime)
 
 
-def _latest_kinematics_csv_file(session_path: Path) -> Path | None:
-    csv_files = [path for path in session_path.glob("*_keypoints_kinematics.csv") if path.is_file()]
-    if not csv_files:
-        csv_files = [path for path in session_path.glob("*.csv") if path.is_file()]
-    if not csv_files:
-        return None
-    return max(csv_files, key=lambda path: path.stat().st_mtime)
-
-
-def _read_csv_columns(csv_path: Path) -> dict[str, list[float]]:
-    if not csv_path.is_file():
-        raise ValueError("kinematics_csv_not_found")
-    import csv
-
-    columns: dict[str, list[float]] = {}
-    with csv_path.open("r", encoding="utf-8", errors="replace", newline="") as handle:
-        reader = csv.DictReader(handle)
-        if not reader.fieldnames:
-            raise ValueError("invalid_csv_header")
-        columns = {field: [] for field in reader.fieldnames}
-        for row in reader:
-            for field in columns:
-                try:
-                    value = float(row.get(field, "nan"))
-                except ValueError:
-                    value = float("nan")
-                columns[field].append(value)
-    return columns
-
-
-def _kinematics_event_markers(csv_path: Path, columns: dict[str, list[float]]) -> list[dict[str, float | int | str]]:
+def _kinematics_event_markers(
+    csv_path: Path,
+    columns: dict[str, list[float]],
+    analysis_result_service: AnalysisResultService,
+) -> list[dict[str, float | int | str]]:
     if not all(f"{key}_time" in columns for key in ("knee_high", "mer", "ball_release")):
         return []
-    recalculated = _recalculate_kinematics_event_markers(csv_path)
+    recalculated = analysis_result_service.recalculate_kinematics_event_markers(csv_path)
     if recalculated:
         return recalculated
     events = [
@@ -1057,59 +835,6 @@ def _kinematics_event_markers(csv_path: Path, columns: dict[str, list[float]]) -
             marker["frame"] = int(frame)
         markers.append(marker)
     return markers
-
-
-def _recalculate_kinematics_event_markers(csv_path: Path) -> list[dict[str, float | int | str]]:
-    try:
-        import pandas as pd
-        from pipelines.parameters import extract_pitching_events_from_dataframe
-
-        df = pd.read_csv(csv_path)
-        if "hand" not in df.columns:
-            return []
-        hand_values = df["hand"].dropna()
-        if hand_values.empty:
-            return []
-        events = extract_pitching_events_from_dataframe(df, str(hand_values.iloc[0]), _infer_csv_fps(df))
-    except Exception:
-        return []
-    labels = {
-        "knee_high": ("KH", "Knee High"),
-        "mer": ("MER", "Max Shoulder External Rotation"),
-        "ball_release": ("BR", "Ball Release"),
-    }
-    markers: list[dict[str, float | int | str]] = []
-    for key, event in events.items():
-        label, description = labels[key]
-        time = event.get("time")
-        if time is None:
-            continue
-        marker: dict[str, float | int | str] = {
-            "key": key,
-            "label": label,
-            "description": description,
-            "time": float(time),
-        }
-        frame = event.get("frame")
-        if frame is not None:
-            marker["frame"] = int(frame)
-        markers.append(marker)
-    return markers
-
-
-def _infer_csv_fps(df) -> float:
-    if "time" not in df.columns:
-        return 60.0
-    import numpy as np
-    import pandas as pd
-
-    time_values = pd.to_numeric(df["time"], errors="coerce").to_numpy(dtype=float)
-    dt = np.diff(time_values)
-    dt = dt[np.isfinite(dt) & (dt > 0)]
-    if len(dt) == 0:
-        return 60.0
-    return 1.0 / float(np.median(dt))
-
 
 def _first_finite(values: list[float]) -> float | None:
     import math

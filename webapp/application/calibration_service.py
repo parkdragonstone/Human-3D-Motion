@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from webapp.domain.ports import SettingsRepository
+from webapp.domain.ports import CalibrationRunner, SettingsRepository
 
 
 @dataclass
@@ -39,8 +39,9 @@ class CalibrationRecord:
 
 
 class CalibrationService:
-    def __init__(self, settings: SettingsRepository) -> None:
+    def __init__(self, settings: SettingsRepository, calibration_runner: CalibrationRunner) -> None:
         self._settings = settings
+        self._calibration_runner = calibration_runner
         self._active: ActiveCalibration | None = None
 
     def start(
@@ -136,9 +137,7 @@ class CalibrationService:
         if calibration_path == storage_root or storage_root not in calibration_path.parents:
             raise ValueError("calibration_path_outside_storage_root")
 
-        from pipelines.calibration import run_calibration_folder
-
-        return run_calibration_folder(str(calibration_path), metadata)
+        return self._calibration_runner.run(str(calibration_path), metadata)
 
     def _write_metadata(self, calibration: ActiveCalibration, status: str) -> None:
         payload = {

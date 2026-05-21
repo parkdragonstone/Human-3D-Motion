@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Callable, Protocol
 
 from webapp.domain.entities import CameraStatus, CaptureSession, CaptureVideo, SubjectInfo
+
+
+LogEmitter = Callable[[str, str], None]
 
 
 class CameraController(Protocol):
@@ -74,4 +77,43 @@ class SettingsRepository(Protocol):
         ...
 
     def set_phone_orientation(self, orientation: str) -> None:
+        ...
+
+
+class AnalysisRunner(Protocol):
+    def run(self, config: dict, emit_log: LogEmitter) -> None:
+        ...
+
+
+class CalibrationRunner(Protocol):
+    def run(self, folder_path: str, metadata: dict | None = None) -> dict:
+        ...
+
+
+class AnalysisResultGateway(Protocol):
+    def pose3d_data_from_trc(self, trc_path: str) -> dict:
+        ...
+
+    def keypoint_frame_from_json(self, session_path: str, camera_label: str, frame: int) -> dict:
+        ...
+
+    def save_keypoint_frame_to_json(
+        self,
+        session_path: str,
+        camera_label: str,
+        frame: int,
+        people_keypoints: list,
+    ) -> None:
+        ...
+
+    def render_pose_video_from_keypoints(self, session: CaptureSession, camera_label: str) -> str:
+        ...
+
+    def latest_kinematics_csv_file(self, session_path: str) -> str | None:
+        ...
+
+    def read_csv_columns(self, csv_path: str) -> dict[str, list[float]]:
+        ...
+
+    def recalculate_kinematics_event_markers(self, csv_path: str) -> list[dict[str, float | int | str]]:
         ...

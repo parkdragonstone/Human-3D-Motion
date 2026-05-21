@@ -1,13 +1,20 @@
 ﻿import os
 import json
-import re
 import itertools
 import cv2
 import numpy as np
-from scipy.interpolate import interp1d
 import logging
 
-from .utilities import export_to_trc
+from .interpolation import interpolate_3d_keypoints
+from .keypoints import (
+    camera_sort_key as _camera_sort_key,
+    get_frame_number,
+    load_synchronized_kps,
+    normalize_camera_label as _normalize_camera_label,
+    person_to_keypoints as _person_to_keypoints,
+    pose_json_dirs as _pose_json_dirs,
+)
+from ..utilities import export_to_trc
 
 logger = logging.getLogger(__name__)
 
@@ -141,75 +148,6 @@ def camera_intrinsic_from_config(calibration, camera_intrinsic_file, RESOLUTION_
     K2, dist2 = estimate_intrinsics(*RESOLUTION_CAM2)
     logger.info("3D Lifting: Using approximated intrinsics from resolution (no calibration intrinsics).")
     return K1, dist1, K2, dist2, False
-
-
-def get_frame_number(filename):
-    match = re.findall(r'\d+', filename)
-    return int(match[-1]) if match else -1
-
-
-def _select_person_by_index(people, person_idx: int, camera_name: str, frame_idx: int):
-    """Select by zero-based position in JSON people[], not by person_id."""
-    if not (0 <= person_idx < len(people)):
-        raise ValueError(
-            f"{camera_name}_person_idx={person_idx} is out of range for frame {frame_idx} "
-            f"({camera_name} people={len(people)})."
-        )
-    return people[person_idx]
-
-
-def load_synchronized_kps(cam1_dir, cam2_dir, cam1_person_idx: int = 0, cam2_person_idx: int = 0):
-    cam1_files = {get_frame_number(f): f for f in os.listdir(cam1_dir) if f.endswith('.json')}
-    cam2_files = {get_frame_number(f): f for f in os.listdir(cam2_dir) if f.endswith('.json')}
-    common_frames = sorted(list(set(cam1_files.keys()).intersection(set(cam2_files.keys()))))
-    
-    kp1_list, kp2_list, valid_frames = [], [], []
-    for frame_idx in common_frames:
-        path1 = os.path.join(cam1_dir, cam1_files[frame_idx])
-        path2 = os.path.join(cam2_dir, cam2_files[frame_idx])
-        with open(path1) as f1, open(path2) as f2:
-            data1, data2 = json.load(f1), json.load(f2)
-        p1 = data1.get('people', []) or []
-        p2 = data2.get('people', []) or []
-        if len(p1) == 0 or len(p2) == 0:
-            continue
-
-        # Stable person selection: use the configured people[] index for each camera.
-        person1 = _select_person_by_index(p1, cam1_person_idx, "cam1", frame_idx)
-        person2 = _select_person_by_index(p2, cam2_person_idx, "cam2", frame_idx)
-
-        kp1_list.append(np.array(person1['pose_keypoints_2d']).reshape(26, 3))
-        kp2_list.append(np.array(person2['pose_keypoints_2d']).reshape(26, 3))
-        valid_frames.append(frame_idx)
-    return np.array(kp1_list), np.array(kp2_list), valid_frames
-
-
-def _normalize_camera_label(label: str) -> str:
-    match = re.search(r"cam0*(\d+)$", str(label).lower())
-    return f"cam{int(match.group(1))}" if match else str(label).lower()
-
-
-def _camera_sort_key(label: str):
-    normalized = _normalize_camera_label(label)
-    match = re.search(r"cam(\d+)$", normalized)
-    return (int(match.group(1)) if match else 9999, str(label).lower())
-
-
-def _pose_json_dirs(project_dir: str):
-    pose_dir = os.path.join(project_dir, 'pose')
-    if not os.path.isdir(pose_dir):
-        return {}
-    dirs = {}
-    for name in os.listdir(pose_dir):
-        match = re.match(r'^(cam\d+)_json$', name, re.IGNORECASE)
-        if match:
-            label = _normalize_camera_label(match.group(1))
-            dirs[label] = os.path.join(pose_dir, name)
-    return dict(sorted(dirs.items(), key=lambda item: _camera_sort_key(item[0])))
-
-
-def _person_to_keypoints(person):
-    return np.asarray(person['pose_keypoints_2d'], dtype=np.float64).reshape(26, 3)
 
 
 def _score_person_combination(candidate_kps, camera_labels, projection_matrices, lifting_config):
@@ -528,110 +466,6 @@ def _triangulate_pose2sim_style_multi(kps_by_camera, camera_labels, projection_m
             if error <= error_threshold:
                 final_3d[f, keypoint_idx] = point_3d
     return final_3d
-
-
-def _nan_runs(mask):
-    runs = []
-    start = None
-    for index, is_missing in enumerate(mask):
-        if is_missing and start is None:
-            start = index
-        elif not is_missing and start is not None:
-            runs.append((start, index))
-            start = None
-    if start is not None:
-        runs.append((start, len(mask)))
-    return runs
-
-
-def _interpolate_series(values, max_gap, method):
-    values = np.asarray(values, dtype=np.float64).copy()
-    missing = ~np.isfinite(values)
-    if not missing.any():
-        return values, 0, 0
-
-    if method == 'none':
-        return values, 0, 0
-
-    finite_indices = np.flatnonzero(~missing)
-    if finite_indices.size < 2:
-        return values, 0, 1
-
-    interpolated = 0
-    x = finite_indices.astype(np.float64)
-    y = values[finite_indices]
-
-    kind = method if method in {'linear', 'slinear', 'quadratic', 'cubic'} else 'linear'
-    min_points = {'linear': 2, 'slinear': 2, 'quadratic': 3, 'cubic': 4}[kind]
-    if finite_indices.size < min_points:
-        return values, 0, 1
-
-    interpolator = interp1d(x, y, kind=kind, bounds_error=False, fill_value=np.nan)
-    for start, end in _nan_runs(missing):
-        gap = end - start
-        bounded = start > finite_indices[0] and end - 1 < finite_indices[-1]
-        if bounded and gap <= max_gap:
-            gap_indices = np.arange(start, end, dtype=np.float64)
-            values[start:end] = interpolator(gap_indices)
-            interpolated += gap
-    return values, interpolated, 0
-
-
-def _fill_remaining_gaps(values, fill_mode):
-    values = np.asarray(values, dtype=np.float64).copy()
-    missing = ~np.isfinite(values)
-    if not missing.any() or fill_mode == 'nan':
-        return values
-    if fill_mode == 'zeros':
-        values[missing] = 0.0
-        return values
-    if fill_mode != 'last_value':
-        return values
-
-    finite_indices = np.flatnonzero(~missing)
-    if finite_indices.size == 0:
-        return values
-    for index in range(1, len(values)):
-        if not np.isfinite(values[index]) and np.isfinite(values[index - 1]):
-            values[index] = values[index - 1]
-    for index in range(len(values) - 2, -1, -1):
-        if not np.isfinite(values[index]) and np.isfinite(values[index + 1]):
-            values[index] = values[index + 1]
-    return values
-
-
-def interpolate_3d_keypoints(keypoints_3d, lifting_config):
-    method = str(lifting_config.get('interpolation', 'linear') or 'none').lower()
-    max_gap = int(lifting_config.get('interp_if_gap_smaller_than', 20))
-    fill_mode = str(lifting_config.get('fill_large_gaps_with', 'last_value') or 'nan').lower()
-    if method not in {'linear', 'slinear', 'quadratic', 'cubic', 'none'}:
-        method = 'linear'
-    if method == 'none' and fill_mode == 'nan':
-        return keypoints_3d, {
-            'method': method,
-            'fill_mode': fill_mode,
-            'interpolated_values': 0,
-            'skipped_series': 0,
-            'remaining_nan_values': int(np.isnan(keypoints_3d).sum()),
-        }
-
-    result = np.asarray(keypoints_3d, dtype=np.float64).copy()
-    interpolated_values = 0
-    skipped_series = 0
-    for keypoint_idx in range(result.shape[1]):
-        for axis_idx in range(result.shape[2]):
-            series, count, skipped = _interpolate_series(result[:, keypoint_idx, axis_idx], max_gap, method)
-            result[:, keypoint_idx, axis_idx] = _fill_remaining_gaps(series, fill_mode)
-            interpolated_values += count
-            skipped_series += skipped
-
-    return result, {
-        'method': method,
-        'fill_mode': fill_mode,
-        'interpolated_values': int(interpolated_values),
-        'skipped_series': int(skipped_series),
-        'remaining_nan_values': int(np.isnan(result).sum()),
-    }
 
 
 def triangulate_all_frames(kp1_all, kp2_all, obj_points_3d, actual_calib,

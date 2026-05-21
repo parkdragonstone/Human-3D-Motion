@@ -3,17 +3,17 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Callable
 
 import cv2
 
 from webapp.domain.entities import CaptureSession
-
-
-LogEmitter = Callable[[str, str], None]
+from webapp.domain.ports import AnalysisRunner, LogEmitter
 
 
 class AnalysisPipelineService:
+    def __init__(self, analysis_runner: AnalysisRunner):
+        self._analysis_runner = analysis_runner
+
     def default_config(self) -> dict:
         from pipelines.config import DEFAULT_CONFIG
 
@@ -21,24 +21,7 @@ class AnalysisPipelineService:
 
     def run(self, session: CaptureSession, user_config: dict, emit_log: LogEmitter) -> None:
         config = self.config_for_session(session, user_config)
-        emit_log("Pose estimation started", "info")
-
-        from pipelines.filtering import run_filtering
-        from pipelines.kinematics import run_kinematics
-        from pipelines.markerAugmentation import run_markerAugmentation
-        from pipelines.poseEstimation import run_poseEstimation
-        from pipelines.reconstruction import run_3d_lifting
-
-        run_poseEstimation(config, emit_log=emit_log)
-        emit_log("Reconstruction started", "info")
-        run_3d_lifting(config, emit_log=emit_log)
-        emit_log("Filtering started", "info")
-        run_filtering(config, emit_log=emit_log)
-        emit_log("Marker augmentation started", "info")
-        run_markerAugmentation(config, emit_log=emit_log)
-        emit_log("Kinematics started", "info")
-        run_kinematics(config, emit_log=emit_log)
-        emit_log("Analysis complete", "info")
+        self._analysis_runner.run(config, emit_log)
 
     def config_for_session(self, session: CaptureSession, user_config: dict) -> dict:
         from pipelines.config import DEFAULT_CONFIG, deep_merge
