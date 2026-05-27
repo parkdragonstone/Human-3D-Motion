@@ -143,8 +143,8 @@ function renderSessions(sessions: CaptureSession[]): void {
     sessionList.innerHTML = `<p class="empty">No capture sessions yet.</p>`;
     return;
   }
-  sessionList.innerHTML = sessions
-    .slice(0, 8)
+  const visibleSessions = sessions.slice(0, 8);
+  sessionList.innerHTML = visibleSessions
     .map(
       (session) => `
         <article class="session-card">
@@ -180,6 +180,25 @@ function renderSessions(sessions: CaptureSession[]): void {
       `,
     )
     .join("");
+  syncAnalysisLinks(visibleSessions);
+}
+
+function analysisUrl(sessionId: string): string {
+  const params = new URLSearchParams({ session_id: sessionId });
+  if (storageRootInput?.value) {
+    params.set("root", storageRootInput.value);
+  }
+  return `/analysis?${params.toString()}`;
+}
+
+function syncAnalysisLinks(sessions: CaptureSession[]): void {
+  sessionList?.querySelectorAll<HTMLAnchorElement>(".session-analyze-button").forEach((link, index) => {
+    const session = sessions[index];
+    if (session) {
+      link.href = analysisUrl(session.session_id);
+      link.textContent = "Analyze";
+    }
+  });
 }
 
 function renderState(status: string, detail: string): void {

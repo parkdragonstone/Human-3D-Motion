@@ -5,8 +5,10 @@ import io
 import json
 import mimetypes
 import secrets
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
+from typing import BinaryIO
 from urllib.parse import urljoin
 
 from webapp.domain.entities import CaptureSession
@@ -33,6 +35,16 @@ class PhoneCalibration:
     project_name: str
     output_dir: str
     save_camera_labels: set[str]
+
+
+@dataclass(frozen=True)
+class PhoneVideoUpload:
+    stream: BinaryIO | None
+    content_type: str
+    user_agent: str
+    actual_fps: str | None
+    actual_width: str | None
+    actual_height: str | None
 
 
 class PhoneCaptureService:
@@ -100,12 +112,7 @@ class PhoneCaptureService:
         self,
         token: str,
         camera_label: str,
-        upload,
-        content_type: str,
-        user_agent: str,
-        actual_fps: str | None,
-        actual_width: str | None,
-        actual_height: str | None,
+        upload: PhoneVideoUpload,
     ) -> dict:
         calibration = self._active_calibrations.get(token)
         if calibration is not None:
@@ -113,23 +120,18 @@ class PhoneCaptureService:
                 calibration,
                 camera_label,
                 upload,
-                content_type,
-                user_agent,
-                actual_fps,
-                actual_width,
-                actual_height,
             )
 
         session = self._active_sessions.get(token)
         if session is None:
             raise ValueError("phone_session_not_active")
 
-        if upload is None:
+        if upload.stream is None:
             raise ValueError("video_file_required")
 
         session_dir = Path(session.session_path)
         session_dir.mkdir(parents=True, exist_ok=True)
-        content_type = content_type or "video/mp4"
+        content_type = upload.content_type or "video/mp4"
         extension = mimetypes.guess_extension(content_type.split(";")[0]) or ".mp4"
         if extension == ".m4v":
             extension = ".mp4"
@@ -137,7 +139,7 @@ class PhoneCaptureService:
             f"{session.subject.name}_{session.subject.height_cm}_{session.subject.weight_kg}_{session.subject.hand}_"
             f"{session.timestamp}_{camera_label}{extension}"
         )
-        upload.save(output_path)
+        _write_upload(upload.stream, output_path)
 
         metadata = {
             "capture_mode": "phone",
@@ -146,10 +148,10 @@ class PhoneCaptureService:
             "orientation": self._settings.get_phone_orientation(),
             "requested_resolution": _resolution_for_orientation(self._settings.get_phone_orientation()),
             "content_type": content_type,
-            "user_agent": user_agent,
-            "actual_fps": actual_fps,
-            "actual_width": actual_width,
-            "actual_height": actual_height,
+            "user_agent": upload.user_agent,
+            "actual_fps": upload.actual_fps,
+            "actual_width": upload.actual_width,
+            "actual_height": upload.actual_height,
             "hand": session.subject.hand,
         }
         metadata_path = output_path.with_suffix(output_path.suffix + ".json")
@@ -160,27 +162,22 @@ class PhoneCaptureService:
         self,
         calibration: PhoneCalibration,
         camera_label: str,
-        upload,
-        content_type: str,
-        user_agent: str,
-        actual_fps: str | None,
-        actual_width: str | None,
-        actual_height: str | None,
+        upload: PhoneVideoUpload,
     ) -> dict:
         if camera_label not in calibration.save_camera_labels:
             return {"skipped": True, "camera_label": camera_label}
 
-        if upload is None:
+        if upload.stream is None:
             raise ValueError("video_file_required")
 
         output_dir = Path(calibration.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        content_type = content_type or "video/mp4"
+        content_type = upload.content_type or "video/mp4"
         extension = mimetypes.guess_extension(content_type.split(";")[0]) or ".mp4"
         if extension == ".m4v":
             extension = ".mp4"
         output_path = output_dir / f"{calibration.mode}_{calibration.project_name}_{camera_label}{extension}"
-        upload.save(output_path)
+        _write_upload(upload.stream, output_path)
 
         metadata = {
             "capture_mode": "phone_calibration",
@@ -188,10 +185,10 @@ class PhoneCaptureService:
             "project_name": calibration.project_name,
             "camera_label": camera_label,
             "content_type": content_type,
-            "user_agent": user_agent,
-            "actual_fps": actual_fps,
-            "actual_width": actual_width,
-            "actual_height": actual_height,
+            "user_agent": upload.user_agent,
+            "actual_fps": upload.actual_fps,
+            "actual_width": upload.actual_width,
+            "actual_height": upload.actual_height,
         }
         metadata_path = output_path.with_suffix(output_path.suffix + ".json")
         metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
@@ -222,6 +219,11 @@ def _qr_data_url(value: str) -> str:
     except Exception:
         encoded = base64.b64encode(value.encode("utf-8")).decode("ascii")
         return f"data:text/plain;base64,{encoded}"
+
+
+def _write_upload(stream: BinaryIO, output_path: Path) -> None:
+    with output_path.open("wb") as target:
+        shutil.copyfileobj(stream, target)
 
 
 def _draft_matches_base_url(draft: PhoneDraft, base_url: str) -> bool:

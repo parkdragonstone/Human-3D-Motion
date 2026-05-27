@@ -12,6 +12,12 @@ from webapp.domain.entities import CaptureSession
 
 
 class PipelineAnalysisResultGateway:
+    def list_pose3d_files(self, session_path: str) -> list[str]:
+        pose3d_dir = Path(session_path) / "pose-3d"
+        if not pose3d_dir.is_dir():
+            return []
+        return sorted(path.name for path in pose3d_dir.glob("*.trc") if path.is_file())
+
     def pose3d_data_from_trc(self, trc_path: str) -> dict:
         from pipelines.utilities import read_trc
 

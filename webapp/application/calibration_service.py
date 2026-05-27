@@ -7,7 +7,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from webapp.domain.ports import CalibrationRunner, SettingsRepository
+from webapp.domain.entities import SubjectInfo
+from webapp.domain.ports import CalibrationRunner, SettingsRepository, VideoFrameEncoder
 
 
 @dataclass
@@ -39,9 +40,15 @@ class CalibrationRecord:
 
 
 class CalibrationService:
-    def __init__(self, settings: SettingsRepository, calibration_runner: CalibrationRunner) -> None:
+    def __init__(
+        self,
+        settings: SettingsRepository,
+        calibration_runner: CalibrationRunner,
+        video_frame_encoder: VideoFrameEncoder,
+    ) -> None:
         self._settings = settings
         self._calibration_runner = calibration_runner
+        self._video_frame_encoder = video_frame_encoder
         self._active: ActiveCalibration | None = None
 
     def start(
@@ -83,6 +90,22 @@ class CalibrationService:
         self._active = None
         self._write_metadata(calibration, "captured")
         return calibration
+
+    def recording_subject(self, calibration: ActiveCalibration) -> SubjectInfo:
+        return SubjectInfo(
+            name=calibration.mode,
+            height_cm=0,
+            weight_kg=0,
+            hand=calibration.project_name,
+        )
+
+    def remove_unselected_videos(self, calibration: ActiveCalibration) -> None:
+        for video in Path(calibration.output_dir).glob("*.mp4"):
+            if not any(video.stem.lower().endswith(label.lower()) for label in calibration.save_camera_labels):
+                video.unlink()
+                metadata = video.with_suffix(video.suffix + ".json")
+                if metadata.exists():
+                    metadata.unlink()
 
     def active(self) -> ActiveCalibration | None:
         return self._active
@@ -126,9 +149,7 @@ class CalibrationService:
         return record
 
     def run_calibration(self, folder_name: str, metadata: dict | None = None) -> dict:
-        record = next((item for item in self.list_calibrations() if item.folder_name == folder_name), None)
-        if record is None:
-            raise ValueError("calibration_not_found")
+        record = self._record_by_folder(folder_name)
         if self._active is not None and self._active.output_dir == record.output_dir:
             raise RuntimeError("calibration_is_recording")
 
@@ -138,6 +159,27 @@ class CalibrationService:
             raise ValueError("calibration_path_outside_storage_root")
 
         return self._calibration_runner.run(str(calibration_path), metadata)
+
+    def calibration_frames(self, folder_name: str) -> dict:
+        record = self._record_by_folder(folder_name)
+        if record.mode != "EXTR":
+            raise ValueError("extrinsic_calibration_required")
+        frames = [
+            {
+                "camera_label": video.camera_label,
+                "image": self._video_frame_encoder.first_frame_data_url(str(video.path)),
+            }
+            for video in record.videos[:4]
+        ]
+        if len(frames) < 2:
+            raise ValueError(f"need_at_least_2_extrinsic_videos: {len(frames)}")
+        return {"folder_name": folder_name, "frames": frames}
+
+    def _record_by_folder(self, folder_name: str) -> CalibrationRecord:
+        record = next((item for item in self.list_calibrations() if item.folder_name == folder_name), None)
+        if record is None:
+            raise ValueError("calibration_not_found")
+        return record
 
     def _write_metadata(self, calibration: ActiveCalibration, status: str) -> None:
         payload = {

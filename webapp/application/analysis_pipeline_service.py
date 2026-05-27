@@ -4,29 +4,30 @@ import json
 import re
 from pathlib import Path
 
-import cv2
-
 from webapp.domain.entities import CaptureSession
-from webapp.domain.ports import AnalysisRunner, LogEmitter
+from webapp.domain.ports import AnalysisConfigProvider, AnalysisRunner, LogEmitter, VideoMetadataReader
 
 
 class AnalysisPipelineService:
-    def __init__(self, analysis_runner: AnalysisRunner):
+    def __init__(
+        self,
+        analysis_runner: AnalysisRunner,
+        config_provider: AnalysisConfigProvider,
+        video_metadata_reader: VideoMetadataReader,
+    ) -> None:
         self._analysis_runner = analysis_runner
+        self._config_provider = config_provider
+        self._video_metadata_reader = video_metadata_reader
 
     def default_config(self) -> dict:
-        from pipelines.config import DEFAULT_CONFIG
-
-        return DEFAULT_CONFIG
+        return self._config_provider.default_config()
 
     def run(self, session: CaptureSession, user_config: dict, emit_log: LogEmitter) -> None:
         config = self.config_for_session(session, user_config)
         self._analysis_runner.run(config, emit_log)
 
     def config_for_session(self, session: CaptureSession, user_config: dict) -> dict:
-        from pipelines.config import DEFAULT_CONFIG, deep_merge
-
-        config = deep_merge(DEFAULT_CONFIG, user_config if isinstance(user_config, dict) else {})
+        config = self._config_provider.merge_config(user_config if isinstance(user_config, dict) else {})
         videos = sorted(session.videos, key=lambda video: video.camera_label)
         if len(videos) < 2:
             raise ValueError("analysis_requires_two_videos")
@@ -39,7 +40,7 @@ class AnalysisPipelineService:
         detected_fps = 0.0
         for video in videos[:4]:
             camera_path = Path(video.path).resolve()
-            fps, resolution = _video_metadata(camera_path)
+            fps, resolution = self._video_metadata_reader.read_metadata(str(camera_path))
             detected_fps = detected_fps or fps
             camera_label = _normalize_camera_label(video.camera_label)
             config["paths"][camera_label] = str(camera_path)
@@ -122,14 +123,3 @@ def _analysis_calibration_bundle(session: CaptureSession) -> tuple[Path | None, 
         if bundle:
             return calibration_path, bundle
     return None, None
-
-
-def _video_metadata(path: Path) -> tuple[float, list[int]]:
-    capture = cv2.VideoCapture(str(path))
-    try:
-        fps = float(capture.get(cv2.CAP_PROP_FPS) or 0)
-        width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
-        height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
-    finally:
-        capture.release()
-    return fps, [width, height]

@@ -48,6 +48,18 @@ class CaptureService:
             for camera in self._camera_controller.list_cameras()
         ]
 
+    def mark_phone_connected(self, camera_label: str) -> None:
+        if hasattr(self._camera_controller, "mark_phone_connected"):
+            self._camera_controller.mark_phone_connected(camera_label)
+
+    def mark_phone_blocked(self, camera_label: str, message: str) -> None:
+        if hasattr(self._camera_controller, "mark_phone_blocked"):
+            self._camera_controller.mark_phone_blocked(camera_label, message)
+
+    def mark_phone_disconnected(self, camera_label: str) -> None:
+        if hasattr(self._camera_controller, "mark_phone_disconnected"):
+            self._camera_controller.mark_phone_disconnected(camera_label)
+
     def configure_cameras(self, camera_count: int, ccb_url: str, live_view_frame_rate: str) -> None:
         self._settings.set_camera_count(camera_count)
         self._settings.set_ccb_url(ccb_url)

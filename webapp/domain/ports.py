@@ -80,8 +80,34 @@ class SettingsRepository(Protocol):
         ...
 
 
+class DirectorySelector(Protocol):
+    def select_directory(self, initial_dir: str) -> str | None:
+        ...
+
+
 class AnalysisRunner(Protocol):
     def run(self, config: dict, emit_log: LogEmitter) -> None:
+        ...
+
+
+class AnalysisConfigProvider(Protocol):
+    def default_config(self) -> dict:
+        ...
+
+    def merge_config(self, user_config: dict) -> dict:
+        ...
+
+
+class VideoMetadataReader(Protocol):
+    def read_metadata(self, path: str) -> tuple[float, list[int]]:
+        ...
+
+    def read_frame_count(self, path: str) -> int:
+        ...
+
+
+class VideoFrameEncoder(Protocol):
+    def first_frame_data_url(self, path: str) -> str:
         ...
 
 
@@ -91,6 +117,9 @@ class CalibrationRunner(Protocol):
 
 
 class AnalysisResultGateway(Protocol):
+    def list_pose3d_files(self, session_path: str) -> list[str]:
+        ...
+
     def pose3d_data_from_trc(self, trc_path: str) -> dict:
         ...
 

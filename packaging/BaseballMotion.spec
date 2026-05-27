@@ -17,7 +17,13 @@ datas = [
     (str(repo_root / "images"), "images"),
 ]
 binaries = collect_dynamic_libs("opensim") + collect_dynamic_libs("onnxruntime")
-hiddenimports = collect_submodules("flask_socketio") + collect_submodules("engineio") + collect_submodules("socketio")
+hiddenimports = (
+    collect_submodules("flask_socketio")
+    + collect_submodules("engineio")
+    + collect_submodules("socketio")
+    + collect_submodules("webapp")
+    + collect_submodules("pipelines")
+)
 
 a = Analysis(
     [str(repo_root / "webapp" / "main.py")],

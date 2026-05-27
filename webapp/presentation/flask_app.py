@@ -1,28 +1,26 @@
 from __future__ import annotations
 
-import base64
 import os
-import threading
-import uuid
 from pathlib import Path
 
 from flask import Flask, jsonify, redirect, render_template, request, send_file, url_for
 from flask_socketio import SocketIO
 
-from webapp.application.analysis_pipeline_service import AnalysisPipelineService
-from webapp.application.analysis_result_service import AnalysisResultService
-from webapp.application.calibration_service import CalibrationService
-from webapp.application.capture_service import CaptureService
-from webapp.application.phone_capture_service import PhoneCaptureService
-from webapp.domain.entities import SubjectInfo
-from webapp.infrastructure.camera.mode_camera_controller import ModeCameraController
-from webapp.infrastructure.camera.phone_camera_controller import PhoneCameraController
-from webapp.infrastructure.camera.url_camera_controller import UrlCameraController
-from webapp.infrastructure.analysis.pipeline_analysis_runner import PipelineAnalysisRunner
-from webapp.infrastructure.analysis.pipeline_analysis_result_gateway import PipelineAnalysisResultGateway
-from webapp.infrastructure.analysis.pipeline_calibration_runner import PipelineCalibrationRunner
-from webapp.infrastructure.persistence.file_session_catalog import FileSessionCatalog
-from webapp.infrastructure.persistence.file_settings import JsonSettingsRepository
+from webapp.application.phone_capture_service import PhoneVideoUpload
+from webapp.bootstrap import create_app_services
+from webapp.presentation.request_parsers import (
+    calibration_mode as _calibration_mode,
+    capture_payload_from_form as _capture_payload_from_form,
+    capture_subject_from_json as _capture_subject_from_json,
+    payload_camera_label as _payload_camera_label,
+)
+from webapp.presentation.serializers import (
+    calibration_record_to_dict as _calibration_record_to_dict,
+    calibration_to_dict as _calibration_to_dict,
+    camera_to_dict as _camera_to_dict,
+    phone_draft_to_dict as _phone_draft_to_dict,
+    session_to_dict as _session_to_dict,
+)
 
 
 def create_app():
@@ -42,26 +40,15 @@ def create_app():
         engineio_logger=False,
     )
 
-    settings = JsonSettingsRepository(os.environ.get("BASEBALL_MOTION_SETTINGS", "webapp_data/settings.json"))
-    sessions = FileSessionCatalog()
-    camera_controller = _camera_controller_from_env(settings)
-    capture_service = CaptureService(camera_controller, sessions, settings)
-    analysis_service = AnalysisPipelineService(PipelineAnalysisRunner())
-    analysis_result_service = AnalysisResultService(PipelineAnalysisResultGateway())
-    phone_service = PhoneCaptureService(settings)
-    calibration_service = CalibrationService(settings, PipelineCalibrationRunner())
-    analysis_jobs: dict[str, dict] = {}
-    capture_service.configure_cameras(
-        settings.get_camera_count(),
-        settings.get_ccb_url(),
-        settings.get_live_view_frame_rate(),
-    )
-    capture_service.configure_capture_mode(
-        settings.get_capture_mode(),
-        settings.get_phone_camera_count(),
-        settings.get_phone_frame_rate(),
-        "landscape",
-    )
+    services = create_app_services()
+    media_view_service = services.media_view_service
+    storage_root_service = services.storage_root_service
+    capture_service = services.capture_service
+    capture_recording_service = services.capture_recording_service
+    analysis_workspace_service = services.analysis_workspace_service
+    phone_service = services.phone_service
+    calibration_service = services.calibration_service
+    calibration_recording_service = services.calibration_recording_service
     phone_socket_labels: dict[str, str] = {}
 
     @app.context_processor
@@ -82,20 +69,20 @@ def create_app():
         sessions = capture_service.list_sessions()
         return render_template(
             "capture.html",
-            storage_root=capture_service.get_storage_root(),
+            storage_root=storage_root_service.get(),
             cameras=capture_service.list_cameras(),
             camera_settings=capture_service.camera_settings(),
             phone_draft=phone_draft,
             active_capture=capture_service.active_capture(),
             sessions=sessions,
-            recent_sessions=[_session_to_dict(session) for session in sessions[:6]],
+            recent_sessions=[_session_to_dict(media_view_service.session_view(session)) for session in sessions[:6]],
         )
 
     @app.post("/settings/storage-root")
     def set_storage_root_form():
         storage_root = request.form.get("storage_root", "").strip()
         if storage_root:
-            capture_service.set_storage_root(storage_root)
+            storage_root_service.set(storage_root)
         return redirect(url_for("capture_page"))
 
     @app.post("/settings/cameras")
@@ -116,14 +103,26 @@ def create_app():
 
     @app.post("/capture/start")
     def start_capture_form():
-        payload = _capture_payload_from_form()
-        capture_service.start_capture(payload["subject"], payload["camera_ids"])
+        payload = _capture_payload_from_form(request.form)
+        result = capture_recording_service.start(payload["subject"], payload["camera_ids"], "", _base_url())
+        _emit_phone_recording_command(
+            socketio,
+            result.phone_command,
+            _session_to_dict(media_view_service.session_view(result.session)),
+            phone_service,
+        )
         _emit_camera_status(socketio, capture_service)
         return redirect(url_for("capture_page"))
 
     @app.post("/capture/stop")
     def stop_capture_form():
-        capture_service.stop_capture()
+        result = capture_recording_service.stop("", _base_url())
+        _emit_phone_recording_command(
+            socketio,
+            result.phone_command,
+            _session_to_dict(media_view_service.session_view(result.session)),
+            phone_service,
+        )
         _emit_camera_status(socketio, capture_service)
         return redirect(url_for("capture_page"))
 
@@ -132,87 +131,60 @@ def create_app():
         phone_draft = phone_service.current_or_create_draft(_base_url())
         return render_template(
             "calibration.html",
-            storage_root=capture_service.get_storage_root(),
+            storage_root=storage_root_service.get(),
             cameras=capture_service.list_cameras(),
             camera_settings=capture_service.camera_settings(),
             phone_draft=phone_draft,
             active_calibration=calibration_service.active(),
-            calibrations=[_calibration_record_to_dict(item) for item in calibration_service.list_calibrations()],
+            calibrations=[
+                _calibration_record_to_dict(media_view_service.calibration_record_view(item))
+                for item in calibration_service.list_calibrations()
+            ],
         )
 
     @app.get("/analysis")
     def analysis_page():
-        analysis_root = request.args.get("root") or capture_service.get_storage_root()
-        if request.args.get("root"):
-            analysis_root = capture_service.set_storage_root(analysis_root)
+        analysis_root = analysis_workspace_service.page_root(request.args.get("root"))
         return render_template(
             "analysis.html",
-            storage_root=capture_service.get_storage_root(),
+            storage_root=storage_root_service.get(),
             initial_root=analysis_root,
             initial_session_id=request.args.get("session_id", ""),
         )
 
     @app.get("/api/analysis/config")
     def api_analysis_config():
-        return jsonify(analysis_service.default_config())
+        return jsonify(analysis_workspace_service.default_config())
 
     @app.get("/api/analysis/sessions")
     def api_analysis_sessions():
-        root = str(request.args.get("root") or capture_service.get_storage_root()).strip()
-        if root:
-            root = capture_service.set_storage_root(root)
-        return jsonify([_session_to_dict(session) for session in sessions.list_sessions(root)])
+        return jsonify([
+            _session_to_dict(media_view_service.session_view(session))
+            for session in analysis_workspace_service.list_sessions(request.args.get("root"))
+        ])
 
     @app.post("/api/analysis/session-root/select")
     def api_select_analysis_session_root():
         data = request.get_json(silent=True) or {}
-        requested_root = str(data.get("root") or "").strip()
-        if data.get("manual") and requested_root:
-            return jsonify({"root": capture_service.set_storage_root(requested_root), "cancelled": False})
-        current_root = capture_service.get_storage_root()
-        try:
-            selected_path = _select_directory(current_root)
-        except RuntimeError as exc:
-            return jsonify({
-                "root": current_root,
-                "cancelled": True,
-                "manual_required": True,
-                "error": str(exc),
-            })
-        if selected_path is None:
-            return jsonify({"root": current_root, "cancelled": True})
-        return jsonify({"root": capture_service.set_storage_root(selected_path), "cancelled": False})
+        selection = storage_root_service.select(str(data.get("root") or ""), bool(data.get("manual")))
+        return jsonify(_root_selection_to_dict(selection, "root"))
 
     @app.get("/api/analysis/video")
     def api_analysis_video():
-        path = Path(str(request.args.get("path") or "")).expanduser().resolve()
-        if not path.is_file() or path.suffix.lower() not in {".mp4", ".mov", ".webm", ".avi"}:
-            return jsonify({"error": "video_not_found"}), 404
-        return send_file(path, conditional=True)
+        try:
+            return send_file(analysis_workspace_service.video_file(request.args.get("path") or ""), conditional=True)
+        except FileNotFoundError as exc:
+            return jsonify({"error": str(exc)}), 404
 
     @app.post("/api/analysis/calibration/upload")
     def api_upload_analysis_calibration():
         try:
-            session_path = Path(str(request.form.get("session_path") or "")).expanduser().resolve()
-            if not session_path.is_dir():
-                raise ValueError("session_path_not_found")
-            session = _session_by_path(sessions.list_sessions(str(session_path.parent)), session_path)
-            if session is None:
-                raise ValueError("session_not_found")
             uploaded = request.files.get("calibration_file")
-            if uploaded is None or not uploaded.filename:
-                raise ValueError("calibration_file_required")
-            if Path(uploaded.filename).suffix.lower() != ".json":
-                raise ValueError("calibration_file_must_be_json")
-            import json
-
-            payload = json.load(uploaded.stream)
-            if not isinstance(payload, dict):
-                raise ValueError("calibration_json_must_be_object")
-            mode = str(payload.get("mode") or ("EXTR" if payload.get("extrinsic") else "INTR")).upper()
-            target = Path(session.session_path) / "analysis_calibration.json"
-            target.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-            return jsonify({"filename": uploaded.filename, "mode": mode, "path": str(target)})
+            return jsonify(analysis_workspace_service.upload_calibration(
+                request.form.get("session_path") or "",
+                uploaded.filename if uploaded else "",
+                uploaded.stream if uploaded else None,
+            ))
         except Exception as exc:
             return jsonify({"error": str(exc)}), 400
 
@@ -220,37 +192,21 @@ def create_app():
     def api_run_analysis():
         data = request.get_json(silent=True) or {}
         try:
-            session_path = Path(str(data.get("session_path") or "")).expanduser().resolve()
-            if not session_path.is_dir():
-                raise ValueError("session_path_not_found")
-            session = _session_by_path(sessions.list_sessions(str(session_path.parent)), session_path)
-            if session is None:
-                raise ValueError("session_not_found")
-            job_id = uuid.uuid4().hex
-            analysis_jobs[job_id] = {"status": "queued", "logs": [], "error": None}
-            thread = threading.Thread(
-                target=_run_analysis_job,
-                args=(job_id, session, data.get("config") or {}, analysis_jobs, analysis_service),
-                daemon=True,
-            )
-            thread.start()
-            return jsonify({"job_id": job_id, **analysis_jobs[job_id]})
+            return jsonify(analysis_workspace_service.start_job(data.get("session_path") or "", data.get("config") or {}))
         except Exception as exc:
             return jsonify({"error": str(exc)}), 400
 
     @app.get("/api/analysis/jobs/<job_id>")
     def api_analysis_job(job_id):
-        job = analysis_jobs.get(job_id)
+        job = analysis_workspace_service.get_job(job_id)
         if job is None:
             return jsonify({"error": "job_not_found"}), 404
-        return jsonify({"job_id": job_id, **job})
+        return jsonify(job)
 
     @app.get("/api/analysis/pose3d/files")
     def api_analysis_pose3d_files():
         try:
-            session = _analysis_session_from_request(sessions)
-            pose3d_dir = Path(session.session_path) / "pose-3d"
-            files = sorted(path.name for path in pose3d_dir.glob("*.trc") if path.is_file()) if pose3d_dir.is_dir() else []
+            files = analysis_workspace_service.list_pose3d_files(request.args.get("session_path") or "")
             return jsonify({"files": files})
         except Exception as exc:
             return jsonify({"error": str(exc), "files": []}), 400
@@ -258,22 +214,23 @@ def create_app():
     @app.get("/api/analysis/pose3d/data")
     def api_analysis_pose3d_data():
         try:
-            session = _analysis_session_from_request(sessions)
-            filename = str(request.args.get("file") or "").strip()
-            if not filename or "/" in filename or "\\" in filename:
-                raise ValueError("invalid_trc_file")
-            trc_path = Path(session.session_path) / "pose-3d" / filename
-            return jsonify(analysis_result_service.pose3d_data_from_trc(trc_path))
+            return jsonify(analysis_workspace_service.pose3d_data(
+                request.args.get("session_path") or "",
+                request.args.get("file") or "",
+            ))
         except Exception as exc:
             return jsonify({"error": str(exc)}), 400
 
     @app.get("/api/analysis/keypoints/frame")
     def api_analysis_keypoints_frame():
         try:
-            session = _analysis_session_from_request(sessions)
             camera_label = str(request.args.get("camera_label") or "")
             frame = int(request.args.get("frame") or 0)
-            return jsonify(analysis_result_service.keypoint_frame_from_json(session.session_path, camera_label, frame))
+            return jsonify(analysis_workspace_service.keypoint_frame(
+                request.args.get("session_path") or "",
+                camera_label,
+                frame,
+            ))
         except Exception as exc:
             return jsonify({"error": str(exc)}), 400
 
@@ -281,20 +238,17 @@ def create_app():
     def api_save_analysis_keypoints_frame():
         try:
             data = request.get_json(silent=True) or {}
-            session_path = Path(str(data.get("session_path") or "")).expanduser().resolve()
-            if not session_path.is_dir():
-                raise ValueError("session_path_not_found")
-            session = _session_by_path(sessions.list_sessions(str(session_path.parent)), session_path)
-            if session is None:
-                raise ValueError("session_not_found")
             camera_label = str(data.get("camera_label") or "")
             frame = int(data.get("frame") or 0)
             keypoints = data.get("keypoints")
             if keypoints is None:
                 keypoints = data.get("people")
-            if not isinstance(keypoints, list):
-                raise ValueError("people_keypoints_required")
-            analysis_result_service.save_keypoint_frame_to_json(session.session_path, camera_label, frame, keypoints)
+            analysis_workspace_service.save_keypoint_frame(
+                data.get("session_path") or "",
+                camera_label,
+                frame,
+                keypoints,
+            )
             return jsonify({"status": "saved"})
         except Exception as exc:
             return jsonify({"error": str(exc)}), 400
@@ -303,14 +257,11 @@ def create_app():
     def api_render_analysis_keypoint_video():
         try:
             data = request.get_json(silent=True) or {}
-            session_path = Path(str(data.get("session_path") or "")).expanduser().resolve()
-            if not session_path.is_dir():
-                raise ValueError("session_path_not_found")
-            session = _session_by_path(sessions.list_sessions(str(session_path.parent)), session_path)
-            if session is None:
-                raise ValueError("session_not_found")
             camera_label = str(data.get("camera_label") or "")
-            pose_video_path = analysis_result_service.render_pose_video_from_keypoints(session, camera_label)
+            pose_video_path = analysis_workspace_service.render_keypoint_video(
+                data.get("session_path") or "",
+                camera_label,
+            )
             return jsonify({"status": "rendered", "pose_video_path": str(pose_video_path)})
         except Exception as exc:
             return jsonify({"error": str(exc)}), 400
@@ -318,41 +269,18 @@ def create_app():
     @app.get("/api/analysis/kinematics")
     def api_analysis_kinematics():
         try:
-            session = _analysis_session_from_request(sessions)
-            csv_path = analysis_result_service.latest_kinematics_csv_file(Path(session.session_path))
-            if csv_path is None:
-                return jsonify({"available": False, "signals": [], "unit": "deg"})
-            columns = analysis_result_service.read_csv_columns(csv_path)
-            signals = [signal for signal in _kinematics_signals() if signal["key"] in columns]
-            return jsonify({
-                "available": True,
-                "file": csv_path.name,
-                "unit": "deg",
-                "signals": signals,
-                "events": _kinematics_event_markers(csv_path, columns, analysis_result_service),
-            })
+            return jsonify(analysis_workspace_service.kinematics_summary(request.args.get("session_path") or ""))
         except Exception as exc:
             return jsonify({"error": str(exc)}), 400
 
     @app.get("/api/analysis/kinematics/timeseries")
     def api_analysis_kinematics_timeseries():
         try:
-            session = _analysis_session_from_request(sessions)
             signal = str(request.args.get("signal") or "").strip()
-            signal_map = {item["key"]: item for item in _kinematics_signals()}
-            if signal not in signal_map:
-                raise ValueError("invalid_signal")
-            csv_path = analysis_result_service.latest_kinematics_csv_file(Path(session.session_path))
-            if csv_path is None:
-                raise ValueError("kinematics_csv_not_found")
-            columns = analysis_result_service.read_csv_columns(csv_path)
-            if signal not in columns:
-                raise ValueError("signal_not_found")
-            return jsonify({
-                "unit": signal_map[signal]["unit"],
-                "time": _finite_or_null(columns.get("time", [])),
-                "values": _finite_or_null(columns.get(signal, [])),
-            })
+            return jsonify(analysis_workspace_service.kinematics_timeseries(
+                request.args.get("session_path") or "",
+                signal,
+            ))
         except Exception as exc:
             return jsonify({"error": str(exc)}), 400
 
@@ -418,7 +346,10 @@ def create_app():
     @app.post("/api/phone-sessions/<session_token>/finalize")
     def api_finalize_phone_session(session_token):
         session = phone_service.stop_session(session_token)
-        return jsonify({"status": "finalized", "session": _session_to_dict(session) if session else None})
+        return jsonify({
+            "status": "finalized",
+            "session": _session_to_dict(media_view_service.session_view(session)) if session else None,
+        })
 
     @app.post("/api/phone-sessions/<session_token>/<camera_label>/upload")
     def api_upload_phone_video(session_token, camera_label):
@@ -427,12 +358,14 @@ def create_app():
             result = phone_service.save_upload(
                 session_token,
                 camera_label,
-                upload,
-                upload.mimetype if upload else "video/mp4",
-                request.headers.get("User-Agent", ""),
-                request.form.get("actual_fps"),
-                request.form.get("actual_width"),
-                request.form.get("actual_height"),
+                PhoneVideoUpload(
+                    stream=upload.stream if upload else None,
+                    content_type=upload.mimetype if upload else "video/mp4",
+                    user_agent=request.headers.get("User-Agent", ""),
+                    actual_fps=request.form.get("actual_fps"),
+                    actual_width=request.form.get("actual_width"),
+                    actual_height=request.form.get("actual_height"),
+                ),
             )
             socketio.emit("phone_upload_complete", {"token": session_token, "camera_label": camera_label, **result})
             return jsonify(result)
@@ -441,23 +374,23 @@ def create_app():
 
     @app.get("/api/sessions")
     def api_sessions():
-        return jsonify([_session_to_dict(s) for s in capture_service.list_sessions()])
+        return jsonify([_session_to_dict(media_view_service.session_view(s)) for s in capture_service.list_sessions()])
 
     @app.delete("/api/sessions/<session_id>")
     def api_delete_session(session_id):
         try:
             session = capture_service.delete_session(session_id)
-            return jsonify({"status": "deleted", "session": _session_to_dict(session)})
+            return jsonify({"status": "deleted", "session": _session_to_dict(media_view_service.session_view(session))})
         except Exception as exc:
             return jsonify({"error": str(exc)}), 400
 
     @app.post("/api/sessions/rescan")
     def api_rescan_sessions():
-        return jsonify([_session_to_dict(s) for s in capture_service.list_sessions()])
+        return jsonify([_session_to_dict(media_view_service.session_view(s)) for s in capture_service.list_sessions()])
 
     @app.get("/api/settings/storage-root")
     def api_get_storage_root():
-        return jsonify({"storage_root": capture_service.get_storage_root()})
+        return jsonify({"storage_root": storage_root_service.get()})
 
     @app.post("/api/settings/storage-root")
     def api_set_storage_root():
@@ -465,77 +398,44 @@ def create_app():
         storage_root = str(data.get("storage_root", "")).strip()
         if not storage_root:
             return jsonify({"error": "storage_root_required"}), 400
-        return jsonify({"storage_root": capture_service.set_storage_root(storage_root)})
+        return jsonify({"storage_root": storage_root_service.set(storage_root)})
 
     @app.post("/api/settings/storage-root/select")
     def api_select_storage_root():
         data = request.get_json(silent=True) or {}
-        requested_root = str(data.get("storage_root") or "").strip()
-        if data.get("manual") and requested_root:
-            return jsonify({"storage_root": capture_service.set_storage_root(requested_root), "cancelled": False})
-        current_root = capture_service.get_storage_root()
-        try:
-            selected_path = _select_directory(current_root)
-        except RuntimeError as exc:
-            return jsonify({
-                "storage_root": current_root,
-                "cancelled": True,
-                "manual_required": True,
-                "error": str(exc),
-            })
-        if selected_path is None:
-            return jsonify({"storage_root": capture_service.get_storage_root(), "cancelled": True})
-        return jsonify({"storage_root": capture_service.set_storage_root(selected_path), "cancelled": False})
+        selection = storage_root_service.select(str(data.get("storage_root") or ""), bool(data.get("manual")))
+        return jsonify(_root_selection_to_dict(selection, "storage_root"))
 
     @app.post("/api/capture/start")
     def api_start_capture():
         data = request.get_json(silent=True) or {}
         try:
-            subject = SubjectInfo(
-                name=str(data.get("name", "")).strip(),
-                height_cm=int(data.get("height_cm")),
-                weight_kg=int(data.get("weight_kg")),
-                hand=_safe_hand(str(data.get("hand", "right"))),
-            )
+            subject = _capture_subject_from_json(data)
             camera_ids = [str(v) for v in data.get("camera_ids", [])]
-            session = capture_service.start_capture(subject, camera_ids)
-            if capture_service.camera_settings()["capture_mode"] == "phone":
-                token = str(data.get("phone_session_token") or phone_service.current_or_create_draft(_base_url()).token)
-                phone_service.start_session(token, session)
-                socketio.emit(
-                    "phone_recording_command",
-                    {
-                        "command": "start",
-                        "token": token,
-                        "session": _session_to_dict(session),
-                        "settings": phone_service.settings_payload(),
-                    },
-                )
+            result = capture_recording_service.start(
+                subject,
+                camera_ids,
+                str(data.get("phone_session_token") or ""),
+                _base_url(),
+            )
+            session_payload = _session_to_dict(media_view_service.session_view(result.session))
+            _emit_phone_recording_command(socketio, result.phone_command, session_payload, phone_service)
             _emit_camera_status(socketio, capture_service)
-            socketio.emit("capture_status", {"status": "recording", "session": _session_to_dict(session)})
-            return jsonify(_session_to_dict(session))
+            socketio.emit("capture_status", {"status": result.status, "session": session_payload})
+            return jsonify(session_payload)
         except Exception as exc:
             return jsonify({"error": str(exc)}), 400
 
     @app.post("/api/capture/stop")
     def api_stop_capture():
         try:
-            settings_payload = capture_service.camera_settings()
-            token = phone_service.current_or_create_draft(_base_url()).token
-            session = capture_service.stop_capture()
-            if settings_payload["capture_mode"] == "phone":
-                socketio.emit(
-                    "phone_recording_command",
-                    {
-                        "command": "stop",
-                        "token": token,
-                        "session": _session_to_dict(session),
-                        "settings": phone_service.settings_payload(),
-                    },
-                )
+            data = request.get_json(silent=True) or {}
+            result = capture_recording_service.stop(str(data.get("phone_session_token") or ""), _base_url())
+            session_payload = _session_to_dict(media_view_service.session_view(result.session))
+            _emit_phone_recording_command(socketio, result.phone_command, session_payload, phone_service)
             _emit_camera_status(socketio, capture_service)
-            socketio.emit("capture_status", {"status": "captured", "session": _session_to_dict(session)})
-            return jsonify(_session_to_dict(session))
+            socketio.emit("capture_status", {"status": result.status, "session": session_payload})
+            return jsonify(session_payload)
         except Exception as exc:
             return jsonify({"error": str(exc)}), 400
 
@@ -544,22 +444,10 @@ def create_app():
         data = request.get_json(silent=True) or {}
         try:
             mode = _calibration_mode(str(data.get("calibration_mode", "intrinsic")))
-            cameras = capture_service.list_cameras()
-            connected_cameras = [camera for camera in cameras if camera.connected]
-            record_camera_ids = [camera.camera_id for camera in connected_cameras]
-            if mode == "INTR":
-                selected_label = str(data.get("intrinsic_camera_label", "")).strip()
-                if not selected_label:
-                    raise ValueError("intrinsic_camera_required")
-                save_camera_labels = {selected_label}
-            else:
-                save_camera_labels = {camera.label for camera in connected_cameras}
-
-            calibration = calibration_service.start(
+            result = calibration_recording_service.start(
                 mode,
                 str(data.get("project_name", "")),
-                record_camera_ids,
-                save_camera_labels,
+                str(data.get("intrinsic_camera_label", "")),
                 {
                     "checker_board_type": data.get("checker_board_type"),
                     "aruco_dictionary": data.get("aruco_dictionary"),
@@ -569,28 +457,18 @@ def create_app():
                     "checker_board_rows": data.get("checker_board_rows"),
                     "object_points": data.get("object_points"),
                 },
+                str(data.get("phone_session_token") or ""),
+                _base_url(),
             )
-            camera_controller.start_recording(record_camera_ids)
-            if capture_service.camera_settings()["capture_mode"] == "phone":
-                token = str(data.get("phone_session_token") or phone_service.current_or_create_draft(_base_url()).token)
-                phone_service.start_calibration(
-                    token,
-                    calibration.mode,
-                    calibration.project_name,
-                    str(calibration.output_dir),
-                    save_camera_labels,
-                )
-                socketio.emit(
-                    "phone_recording_command",
-                    {
-                        "command": "start",
-                        "token": token,
-                        "session": _calibration_to_dict(calibration, "recording"),
-                        "settings": phone_service.settings_payload(),
-                    },
+            if result.phone_command:
+                _emit_phone_recording_command(
+                    socketio,
+                    result.phone_command,
+                    _calibration_to_dict(result.calibration, result.status),
+                    phone_service,
                 )
             _emit_camera_status(socketio, capture_service)
-            return jsonify(_calibration_to_dict(calibration, "recording"))
+            return jsonify(_calibration_to_dict(result.calibration, result.status))
         except Exception as exc:
             return jsonify({"error": str(exc)}), 400
 
@@ -598,41 +476,34 @@ def create_app():
     def api_stop_calibration():
         data = request.get_json(silent=True) or {}
         try:
-            calibration = calibration_service.stop()
-            camera_controller.stop_recording(
-                calibration.record_camera_ids,
-                str(calibration.output_dir),
-                _calibration_subject(calibration),
-                calibration.timestamp,
-            )
-            if calibration.mode == "INTR":
-                _remove_unselected_calibration_videos(calibration)
-            if capture_service.camera_settings()["capture_mode"] == "phone":
-                token = str(data.get("phone_session_token") or phone_service.current_or_create_draft(_base_url()).token)
-                phone_service.stop_calibration(token)
-                socketio.emit(
-                    "phone_recording_command",
-                    {
-                        "command": "stop",
-                        "token": token,
-                        "session": _calibration_to_dict(calibration, "captured"),
-                        "settings": phone_service.settings_payload(),
-                    },
+            result = calibration_recording_service.stop(str(data.get("phone_session_token") or ""), _base_url())
+            if result.phone_command:
+                _emit_phone_recording_command(
+                    socketio,
+                    result.phone_command,
+                    _calibration_to_dict(result.calibration, result.status),
+                    phone_service,
                 )
             _emit_camera_status(socketio, capture_service)
-            return jsonify(_calibration_to_dict(calibration, "captured"))
+            return jsonify(_calibration_to_dict(result.calibration, result.status))
         except Exception as exc:
             return jsonify({"error": str(exc)}), 400
 
     @app.get("/api/calibrations")
     def api_calibrations():
-        return jsonify([_calibration_record_to_dict(item) for item in calibration_service.list_calibrations()])
+        return jsonify([
+            _calibration_record_to_dict(media_view_service.calibration_record_view(item))
+            for item in calibration_service.list_calibrations()
+        ])
 
     @app.delete("/api/calibrations/<folder_name>")
     def api_delete_calibration(folder_name):
         try:
             calibration = calibration_service.delete_calibration(folder_name)
-            return jsonify({"status": "deleted", "calibration": _calibration_record_to_dict(calibration)})
+            return jsonify({
+                "status": "deleted",
+                "calibration": _calibration_record_to_dict(media_view_service.calibration_record_view(calibration)),
+            })
         except Exception as exc:
             return jsonify({"error": str(exc)}), 400
 
@@ -648,20 +519,7 @@ def create_app():
     @app.get("/api/calibrations/<folder_name>/frames")
     def api_calibration_frames(folder_name):
         try:
-            record = next((item for item in calibration_service.list_calibrations() if item.folder_name == folder_name), None)
-            if record is None:
-                raise ValueError("calibration_not_found")
-            if record.mode != "EXTR":
-                raise ValueError("extrinsic_calibration_required")
-            frames = []
-            for video in record.videos[:4]:
-                frames.append({
-                    "camera_label": video.camera_label,
-                    "image": _first_frame_data_url(Path(video.path)),
-                })
-            if len(frames) < 2:
-                raise ValueError(f"need_at_least_2_extrinsic_videos: {len(frames)}")
-            return jsonify({"folder_name": folder_name, "frames": frames})
+            return jsonify(calibration_service.calibration_frames(folder_name))
         except Exception as exc:
             return jsonify({"error": str(exc)}), 400
 
@@ -677,9 +535,9 @@ def create_app():
     @socketio.on("phone_register")
     def on_phone_register(payload):
         camera_label = _payload_camera_label(payload)
-        if camera_label and hasattr(camera_controller, "mark_phone_connected"):
+        if camera_label:
             phone_socket_labels[request.sid] = camera_label
-            camera_controller.mark_phone_connected(camera_label)
+            capture_service.mark_phone_connected(camera_label)
             _emit_camera_status(socketio, capture_service)
         socketio.emit("phone_registered", payload)
 
@@ -688,10 +546,10 @@ def create_app():
         camera_label = _payload_camera_label(payload)
         if camera_label:
             phone_socket_labels[request.sid] = camera_label
-            if str(payload.get("status")) == "blocked" and hasattr(camera_controller, "mark_phone_blocked"):
-                camera_controller.mark_phone_blocked(camera_label, str(payload.get("message") or ""))
-            elif hasattr(camera_controller, "mark_phone_connected"):
-                camera_controller.mark_phone_connected(camera_label)
+            if str(payload.get("status")) == "blocked":
+                capture_service.mark_phone_blocked(camera_label, str(payload.get("message") or ""))
+            else:
+                capture_service.mark_phone_connected(camera_label)
             _emit_camera_status(socketio, capture_service)
         socketio.emit("phone_preview_status", payload)
 
@@ -706,410 +564,36 @@ def create_app():
     @socketio.on("disconnect")
     def on_disconnect():
         camera_label = phone_socket_labels.pop(request.sid, "")
-        if camera_label and hasattr(camera_controller, "mark_phone_disconnected"):
-            camera_controller.mark_phone_disconnected(camera_label)
+        if camera_label:
+            capture_service.mark_phone_disconnected(camera_label)
             _emit_camera_status(socketio, capture_service)
 
     return app, socketio
 
 
-def _camera_controller_from_env(settings):
-    sony_count = int(os.environ.get("BASEBALL_MOTION_CAMERA_COUNT", str(settings.get_camera_count())))
-    return ModeCameraController(
-        settings,
-        UrlCameraController(camera_count=sony_count),
-        PhoneCameraController(camera_count=settings.get_phone_camera_count()),
-    )
-
-
-def _capture_payload_from_form():
-    subject = SubjectInfo(
-        name=request.form.get("name", "").strip() or "subject",
-        height_cm=int(request.form.get("height_cm", "170")),
-        weight_kg=int(request.form.get("weight_kg", "70")),
-        hand=_safe_hand(request.form.get("hand", "right")),
-    )
-    camera_ids = request.form.getlist("camera_ids")
-    return {"subject": subject, "camera_ids": camera_ids}
-
-
-def _emit_camera_status(socketio: SocketIO, capture_service: CaptureService) -> None:
+def _emit_camera_status(socketio: SocketIO, capture_service) -> None:
     socketio.emit("camera_status", [_camera_to_dict(c) for c in capture_service.list_cameras()])
 
 
-def _payload_camera_label(payload) -> str:
-    if isinstance(payload, dict):
-        return str(payload.get("camera_label") or "").strip()
-    return ""
-
-
-def _safe_hand(hand: str) -> str:
-    value = str(hand or "right").strip().lower()
-    return value if value in {"right", "left"} else "right"
-
-
-def _camera_to_dict(camera):
-    return {
-        "camera_id": camera.camera_id,
-        "label": camera.label,
-        "connected": camera.connected,
-        "recording": camera.recording,
-        "live_view_url": camera.live_view_url,
-        "live_view_frame_rate": camera.live_view_frame_rate,
-        "last_error": camera.last_error,
-    }
-
-
-def _session_to_dict(session):
-    return {
-        "session_id": session.session_id,
-        "subject": {
-            "name": session.subject.name,
-            "height_cm": session.subject.height_cm,
-            "weight_kg": session.subject.weight_kg,
-            "hand": session.subject.hand,
-        },
-        "timestamp": session.timestamp,
-        "display_timestamp": _display_timestamp(session.timestamp),
-        "session_path": session.session_path,
-        "status": session.status,
-        "videos": [_video_to_dict(v, session.session_path) for v in session.videos],
-        "created_at": session.created_at.isoformat(timespec="seconds") if session.created_at else None,
-        "updated_at": session.updated_at.isoformat(timespec="seconds") if session.updated_at else None,
-    }
-
-
-def _session_by_path(session_list, session_path: Path):
-    resolved = session_path.resolve()
-    return next((session for session in session_list if Path(session.session_path).resolve() == resolved), None)
-
-
-def _analysis_session_from_request(sessions):
-    session_path = Path(str(request.args.get("session_path") or "")).expanduser().resolve()
-    if not session_path.is_dir():
-        raise ValueError("session_path_not_found")
-    session = _session_by_path(sessions.list_sessions(str(session_path.parent)), session_path)
-    if session is None:
-        raise ValueError("session_not_found")
-    return session
-
-
-def _latest_mot_file(session_path: Path) -> Path | None:
-    kinematics_dir = session_path / "kinematics"
-    if not kinematics_dir.is_dir():
-        return None
-    mot_files = [path for path in kinematics_dir.glob("*.mot") if path.is_file()]
-    if not mot_files:
-        return None
-    return max(mot_files, key=lambda path: path.stat().st_mtime)
-
-
-def _kinematics_event_markers(
-    csv_path: Path,
-    columns: dict[str, list[float]],
-    analysis_result_service: AnalysisResultService,
-) -> list[dict[str, float | int | str]]:
-    if not all(f"{key}_time" in columns for key in ("knee_high", "mer", "ball_release")):
-        return []
-    recalculated = analysis_result_service.recalculate_kinematics_event_markers(csv_path)
-    if recalculated:
-        return recalculated
-    events = [
-        ("knee_high", "KH", "Knee High"),
-        ("mer", "MER", "Max Shoulder External Rotation"),
-        ("ball_release", "BR", "Ball Release"),
-    ]
-    markers: list[dict[str, float | int | str]] = []
-    for key, label, description in events:
-        frame = _first_finite(columns.get(f"{key}_frame", []))
-        time = _first_finite(columns.get(f"{key}_time", []))
-        if time is None:
-            continue
-        marker: dict[str, float | int | str] = {
-            "key": key,
-            "label": label,
-            "description": description,
-            "time": time,
-        }
-        if frame is not None:
-            marker["frame"] = int(frame)
-        markers.append(marker)
-    return markers
-
-def _first_finite(values: list[float]) -> float | None:
-    import math
-
-    for value in values:
-        if isinstance(value, float) and math.isfinite(value):
-            return value
-    return None
-
-
-def _read_mot_table(mot_path: Path) -> tuple[bool, dict[str, list[float]]]:
-    if not mot_path.is_file():
-        raise ValueError("mot_file_not_found")
-    in_degrees = False
-    columns: dict[str, list[float]] = {}
-    headers: list[str] | None = None
-    with mot_path.open("r", encoding="utf-8", errors="replace") as handle:
-        iterator = iter(handle)
-        for line in iterator:
-            stripped = line.strip()
-            if "inDegrees" in stripped:
-                lowered = stripped.lower()
-                in_degrees = "yes" in lowered or "true" in lowered
-            if stripped == "endheader":
-                headers = next(iterator, "").strip().split()
-                break
-        if not headers:
-            raise ValueError("invalid_mot_header")
-        columns = {header: [] for header in headers}
-        for line in iterator:
-            parts = line.strip().split()
-            if len(parts) < len(headers):
-                continue
-            for index, header in enumerate(headers):
-                try:
-                    value = float(parts[index])
-                except ValueError:
-                    value = float("nan")
-                columns[header].append(value)
-    return in_degrees, columns
-
-
-def _kinematics_signals() -> list[dict[str, str]]:
-    angle_signals = [
-        {"key": "hip_flexion_l", "label": "Hip Flexion", "side": "Left", "category": "hip"},
-        {"key": "hip_flexion_r", "label": "Hip Flexion", "side": "Right", "category": "hip"},
-        {"key": "hip_adduction_l", "label": "Hip Abduction", "side": "Left", "category": "hip"},
-        {"key": "hip_adduction_r", "label": "Hip Abduction", "side": "Right", "category": "hip"},
-        {"key": "hip_rotation_l", "label": "Hip Rotation", "side": "Left", "category": "hip"},
-        {"key": "hip_rotation_r", "label": "Hip Rotation", "side": "Right", "category": "hip"},
-        {"key": "pelvis_tilt", "label": "Pelvis Tilt", "side": "Center", "category": "pelvis"},
-        {"key": "pelvis_list", "label": "Pelvis List", "side": "Center", "category": "pelvis"},
-        {"key": "pelvis_rotation", "label": "Pelvis Rotation", "side": "Center", "category": "pelvis"},
-        {"key": "L5_S1_Flex_Ext", "label": "Flexion", "side": "Center", "category": "hip_shoulder"},
-        {"key": "L5_S1_Lat_Bending", "label": "Lateral Bend", "side": "Center", "category": "hip_shoulder"},
-        {"key": "L5_S1_axial_rotation", "label": "Rotation", "side": "Center", "category": "hip_shoulder"},
-        {"key": "trunk_tilt_global", "label": "Trunk Tilt", "side": "Global", "category": "trunk"},
-        {"key": "trunk_list_global", "label": "Trunk List", "side": "Global", "category": "trunk"},
-        {"key": "trunk_rotation_global", "label": "Trunk Rotation", "side": "Global", "category": "trunk"},
-        {"key": "knee_angle_l", "label": "Knee Flexion", "side": "Left", "category": "knee"},
-        {"key": "knee_angle_r", "label": "Knee Flexion", "side": "Right", "category": "knee"},
-        {"key": "ankle_angle_l", "label": "Ankle Dorsiflexion", "side": "Left", "category": "ankle"},
-        {"key": "ankle_angle_r", "label": "Ankle Dorsiflexion", "side": "Right", "category": "ankle"},
-        {"key": "arm_flex_l", "label": "Shoulder Flexion", "side": "Left", "category": "shoulder"},
-        {"key": "arm_flex_r", "label": "Shoulder Flexion", "side": "Right", "category": "shoulder"},
-        {"key": "arm_add_l", "label": "Shoulder Adduction", "side": "Left", "category": "shoulder"},
-        {"key": "arm_add_r", "label": "Shoulder Adduction", "side": "Right", "category": "shoulder"},
-        {"key": "arm_rot_l", "label": "Shoulder Rotation", "side": "Left", "category": "shoulder"},
-        {"key": "arm_rot_r", "label": "Shoulder Rotation", "side": "Right", "category": "shoulder"},
-        {"key": "elbow_flex_l", "label": "Elbow Flexion", "side": "Left", "category": "elbow"},
-        {"key": "elbow_flex_r", "label": "Elbow Flexion", "side": "Right", "category": "elbow"},
-        {"key": "pro_sup_l", "label": "Pronation Supination", "side": "Left", "category": "elbow"},
-        {"key": "pro_sup_r", "label": "Pronation Supination", "side": "Right", "category": "elbow"},
-    ]
-    signals = [{**signal, "kind": "angle", "unit": "deg"} for signal in angle_signals]
-    signals.extend([
-        {
-            **signal,
-            "key": f"{signal['key']}_velocity",
-            "kind": "velocity",
-            "unit": "deg/s",
-        }
-        for signal in angle_signals
-    ])
-    return signals
-
-
-def _finite_or_null(values: list[float]) -> list[float | None]:
-    import math
-
-    return [round(value, 4) if isinstance(value, float) and math.isfinite(value) else None for value in values]
-
-
-def _run_analysis_job(
-    job_id: str,
-    session,
-    user_config: dict,
-    jobs: dict[str, dict],
-    analysis_service: AnalysisPipelineService,
-) -> None:
-    job = jobs[job_id]
-
-    def emit_log(message, level="info"):
-        job["logs"].append({"level": level, "message": str(message)})
-
-    try:
-        job["status"] = "running"
-        analysis_service.run(session, user_config, emit_log)
-        job["status"] = "completed"
-    except Exception as exc:
-        job["status"] = "failed"
-        job["error"] = str(exc)
-        emit_log(str(exc), "error")
-
-
-def _calibration_to_dict(calibration, status: str):
-    return {
-        "calibration_id": calibration.calibration_id,
-        "mode": calibration.mode,
-        "project_name": calibration.project_name,
-        "timestamp": calibration.timestamp,
-        "status": status,
-        "output_dir": str(calibration.output_dir),
-        "record_camera_ids": calibration.record_camera_ids,
-        "save_camera_labels": sorted(calibration.save_camera_labels),
-    }
-
-
-def _calibration_record_to_dict(record):
-    return {
-        "mode": record.mode,
-        "project_name": record.project_name,
-        "folder_name": record.folder_name,
-        "display_name": f"CALIB {record.project_name}",
-        "output_dir": str(record.output_dir),
-        "updated_at": record.updated_at.isoformat(timespec="seconds"),
-        "display_updated_at": record.updated_at.strftime("%Y-%m-%d %H:%M:%S"),
-        "videos": [_calibration_video_to_dict(video) for video in record.videos],
-    }
-
-
-def _calibration_video_to_dict(video):
-    path = Path(video.path)
-    size_bytes = path.stat().st_size if path.is_file() else 0
-    return {
-        "camera_label": video.camera_label,
-        "path": str(path),
-        "filename": path.name,
-        "size_bytes": size_bytes,
-        "size_label": _format_size(size_bytes),
-    }
-
-
-def _first_frame_data_url(video_path: Path) -> str:
-    import cv2
-
-    capture = cv2.VideoCapture(str(video_path))
-    try:
-        ok, frame = capture.read()
-    finally:
-        capture.release()
-    if not ok or frame is None:
-        raise ValueError(f"cannot_read_first_frame: {video_path.name}")
-    ok, buffer = cv2.imencode(".jpg", frame)
-    if not ok:
-        raise ValueError(f"cannot_encode_first_frame: {video_path.name}")
-    encoded = base64.b64encode(buffer.tobytes()).decode("ascii")
-    return f"data:image/jpeg;base64,{encoded}"
-
-
-def _calibration_subject(calibration) -> SubjectInfo:
-    return SubjectInfo(
-        name=calibration.mode,
-        height_cm=0,
-        weight_kg=0,
-        hand=calibration.project_name,
-    )
-
-
-def _calibration_mode(value: str) -> str:
-    normalized = str(value or "intrinsic").strip().lower()
-    if normalized in {"intrinsic", "intr", "in"}:
-        return "INTR"
-    if normalized in {"extrinsic", "extr", "ex"}:
-        return "EXTR"
-    raise ValueError("unknown_calibration_mode")
-
-
-def _remove_unselected_calibration_videos(calibration) -> None:
-    for video in Path(calibration.output_dir).glob("*.mp4"):
-        if not any(video.stem.lower().endswith(label.lower()) for label in calibration.save_camera_labels):
-            video.unlink()
-            metadata = video.with_suffix(video.suffix + ".json")
-            if metadata.exists():
-                metadata.unlink()
-
-
-def _video_to_dict(video, session_path: str | None = None):
-    import re
-    import cv2
-
-    match = re.search(r"cam0*(\d+)$", str(video.camera_label).lower())
-    pose_label = f"cam{int(match.group(1))}" if match else video.camera_label
-    path = Path(video.path)
-    size_bytes = path.stat().st_size if path.is_file() else 0
-    pose_path = Path(session_path or path.parent) / "pose" / f"{pose_label}_pose.mp4"
-    fps = 0.0
-    frame_count = 0
-    if path.is_file():
-        capture = cv2.VideoCapture(str(path))
-        try:
-            fps = float(capture.get(cv2.CAP_PROP_FPS) or 0)
-            frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
-        finally:
-            capture.release()
-    return {
-        "camera_id": video.camera_id,
-        "camera_label": video.camera_label,
-        "path": video.path,
-        "video_url": url_for("api_analysis_video", path=str(path)),
-        "pose_video_path": str(pose_path) if pose_path.is_file() else None,
-        "pose_video_url": (
-            url_for("api_analysis_video", path=str(pose_path), v=int(pose_path.stat().st_mtime))
-            if pose_path.is_file() else None
-        ),
-        "filename": path.name,
-        "fps": fps,
-        "frame_count": frame_count,
-        "size_bytes": size_bytes,
-        "size_label": _format_size(size_bytes),
-    }
-
-
-def _display_timestamp(timestamp: str) -> str:
-    if len(timestamp) == 15 and timestamp[8] == "_":
-        return f"{timestamp[:4]}-{timestamp[4:6]}-{timestamp[6:8]} {timestamp[9:]}"
-    return timestamp
-
-
-def _format_size(size_bytes: int) -> str:
-    if size_bytes >= 1024 * 1024:
-        return f"{size_bytes / (1024 * 1024):.1f} MB"
-    if size_bytes >= 1024:
-        return f"{size_bytes / 1024:.1f} KB"
-    return f"{size_bytes} B"
-
-
-def _select_directory(initial_dir: str) -> str | None:
-    try:
-        import tkinter as tk
-        from tkinter import filedialog
-
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes("-topmost", True)
-        selected = filedialog.askdirectory(initialdir=initial_dir, title="Select storage folder")
-        root.destroy()
-        return selected or None
-    except Exception as exc:
-        raise RuntimeError(f"folder_dialog_unavailable: {exc}") from exc
-
-
-def _phone_draft_to_dict(draft):
-    return {
-        "token": draft.token,
-        "slots": [
+def _emit_phone_recording_command(socketio: SocketIO, command: dict | None, session_payload: dict, phone_service) -> None:
+    if command:
+        socketio.emit(
+            "phone_recording_command",
             {
-                "camera_id": slot.camera_id,
-                "camera_label": slot.camera_label,
-                "join_url": slot.join_url,
-                "qr_data_url": slot.qr_data_url,
-            }
-            for slot in draft.slots
-        ],
-    }
+                **command,
+                "session": session_payload,
+                "settings": phone_service.settings_payload(),
+            },
+        )
+
+
+def _root_selection_to_dict(selection, root_key: str) -> dict:
+    payload = {root_key: selection.root, "cancelled": selection.cancelled}
+    if selection.manual_required:
+        payload["manual_required"] = True
+    if selection.error:
+        payload["error"] = selection.error
+    return payload
 
 
 def _base_url() -> str:
