@@ -531,6 +531,23 @@ textarea[name="object_points"]::-webkit-scrollbar-thumb:hover {
 .analysis-run-button {
   width: 100%;
   margin-top: 14px;
+  min-height: 48px;
+  border: 1px solid rgba(215, 255, 67, 0.46);
+  background: var(--acid);
+  color: var(--charcoal);
+  box-shadow: 0 0 0 1px rgba(5, 8, 10, 0.42), 0 14px 34px rgba(215, 255, 67, 0.12);
+}
+
+.analysis-run-button:hover:not(:disabled) {
+  border-color: var(--acid);
+  background: #e2ff5f;
+}
+
+.analysis-run-button:disabled {
+  border-color: rgba(246, 244, 233, 0.1);
+  background: #151a1f;
+  color: var(--muted);
+  box-shadow: none;
 }
 
 .analysis-log {

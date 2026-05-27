@@ -157,8 +157,8 @@ function renderSessions(sessions: CaptureSession[]): void {
             </div>
             <div class="session-actions">
               <time>${session.display_timestamp || session.timestamp}</time>
-              <a class="session-analyze-button" href="/analysis">분석하기</a>
-              <button class="session-delete-button" type="button" data-delete-session-id="${session.session_id}">삭제</button>
+              <a class="session-analyze-button" href="/analysis">Analyze</a>
+              <button class="session-delete-button" type="button" data-delete-session-id="${session.session_id}">Delete</button>
             </div>
           </header>
           <div class="session-video-list">
@@ -347,6 +347,46 @@ async function deleteSession(sessionId: string): Promise<void> {
   }
 }
 
+function confirmSessionDelete(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "confirm-modal-overlay";
+    overlay.innerHTML = `
+      <div class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="deleteSessionTitle">
+        <h2 id="deleteSessionTitle">Delete session?</h2>
+        <p>This action cannot be undone.</p>
+        <div class="confirm-modal-actions">
+          <button class="button secondary" type="button" data-confirm-cancel>Cancel</button>
+          <button class="button confirm-danger" type="button" data-confirm-delete>Delete</button>
+        </div>
+      </div>
+    `;
+
+    const close = (confirmed: boolean) => {
+      document.removeEventListener("keydown", handleKeydown);
+      overlay.remove();
+      resolve(confirmed);
+    };
+    const handleKeydown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        close(false);
+      }
+    };
+
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) {
+        close(false);
+      }
+    });
+    overlay.querySelector<HTMLButtonElement>("[data-confirm-cancel]")?.addEventListener("click", () => close(false));
+    overlay.querySelector<HTMLButtonElement>("[data-confirm-delete]")?.addEventListener("click", () => close(true));
+
+    document.addEventListener("keydown", handleKeydown);
+    document.body.appendChild(overlay);
+    overlay.querySelector<HTMLButtonElement>("[data-confirm-delete]")?.focus();
+  });
+}
+
 async function startCapture(): Promise<void> {
   if (!captureForm || !captureForm.reportValidity()) return;
   const data = new FormData(captureForm);
@@ -429,7 +469,7 @@ sessionList?.addEventListener("click", async (event) => {
   if (!button) return;
   const sessionId = button.dataset.deleteSessionId;
   if (!sessionId) return;
-  if (!window.confirm("이 세션을 삭제할까요?")) return;
+  if (!(await confirmSessionDelete())) return;
 
   button.disabled = true;
   try {

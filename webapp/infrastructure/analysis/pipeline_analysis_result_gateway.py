@@ -113,7 +113,7 @@ class PipelineAnalysisResultGateway:
         path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
     def render_pose_video_from_keypoints(self, session: CaptureSession, camera_label: str) -> str:
-        from pipelines.utilities import draw_keypts, draw_skel, setup_video, transcode_to_h264
+        from pipelines.utilities import draw_bounding_box, draw_keypts, draw_skel, setup_video, transcode_to_h264
 
         pose_label = _normalized_pose_camera_label(camera_label)
         video = next(
@@ -141,7 +141,7 @@ class PipelineAnalysisResultGateway:
                     break
                 json_path = json_dir / f"{pose_label}_{frame_index:06d}.json"
                 if json_path.is_file():
-                    frame = _draw_keypoints_json(frame, json_path, draw_keypts, draw_skel)
+                    frame = _draw_keypoints_json(frame, json_path, draw_bounding_box, draw_keypts, draw_skel)
                 writer.write(frame)
                 frame_index += 1
         finally:
@@ -267,7 +267,7 @@ def _json_number(value) -> float | None:
     return number if math.isfinite(number) else None
 
 
-def _draw_keypoints_json(frame, json_path: Path, draw_keypts, draw_skel):
+def _draw_keypoints_json(frame, json_path: Path, draw_bounding_box, draw_keypts, draw_skel):
     payload = json.loads(json_path.read_text(encoding="utf-8"))
     keypoints = []
     scores = []
@@ -285,6 +285,12 @@ def _draw_keypoints_json(frame, json_path: Path, draw_keypts, draw_skel):
 
     keypoints_array = np.asarray(keypoints, dtype=float)
     scores_array = np.asarray(scores, dtype=float)
+    frame = draw_bounding_box(
+        frame,
+        keypoints_array[:, :, 0],
+        keypoints_array[:, :, 1],
+        fontSize=2,
+    )
     frame = draw_keypts(frame, keypoints_array[:, :, 0], keypoints_array[:, :, 1], scores_array, cmap_str="RdYlGn")
     return draw_skel(frame, keypoints_array[:, :, 0], keypoints_array[:, :, 1])
 
