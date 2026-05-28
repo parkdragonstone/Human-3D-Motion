@@ -1,5 +1,4 @@
 import { postJson } from "./api.js";
-import type { CaptureSession } from "./types.js";
 
 declare global {
   interface Window {
@@ -22,11 +21,6 @@ interface PhoneRecordingCommand {
   command: "start" | "stop";
   token: string;
   camera_label?: string;
-  session: CaptureSession;
-  settings: {
-    frame_rate: number;
-    resolution: string;
-  };
 }
 
 const config = window.phoneCaptureConfig;

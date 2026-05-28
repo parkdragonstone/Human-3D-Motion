@@ -108,8 +108,6 @@ def create_app():
         _emit_phone_recording_command(
             socketio,
             result.phone_command,
-            _session_to_dict(media_view_service.session_view(result.session)),
-            phone_service,
         )
         _emit_camera_status(socketio, capture_service)
         return redirect(url_for("capture_page"))
@@ -120,8 +118,6 @@ def create_app():
         _emit_phone_recording_command(
             socketio,
             result.phone_command,
-            _session_to_dict(media_view_service.session_view(result.session)),
-            phone_service,
         )
         _emit_camera_status(socketio, capture_service)
         return redirect(url_for("capture_page"))
@@ -427,7 +423,7 @@ def create_app():
             )
             for command in phone_commands:
                 phone_service.start_session(command["token"], result.session)
-            _emit_phone_recording_commands(socketio, phone_commands or [result.phone_command], session_payload, phone_service)
+            _emit_phone_recording_commands(socketio, phone_commands or [result.phone_command])
             _emit_camera_status(socketio, capture_service)
             socketio.emit("capture_status", {"status": result.status, "session": session_payload})
             return jsonify(session_payload)
@@ -448,7 +444,7 @@ def create_app():
             )
             result = capture_recording_service.stop(str(data.get("phone_session_token") or ""), _base_url())
             session_payload = _session_to_dict(media_view_service.session_view(result.session))
-            _emit_phone_recording_commands(socketio, phone_commands or [result.phone_command], session_payload, phone_service)
+            _emit_phone_recording_commands(socketio, phone_commands or [result.phone_command])
             _emit_camera_status(socketio, capture_service)
             socketio.emit("capture_status", {"status": result.status, "session": session_payload})
             return jsonify(session_payload)
@@ -482,7 +478,7 @@ def create_app():
                     str(result.calibration.output_dir),
                     result.calibration.save_camera_labels,
                 )
-            _emit_phone_recording_commands(socketio, phone_commands or [result.phone_command], calibration_payload, phone_service)
+            _emit_phone_recording_commands(socketio, phone_commands or [result.phone_command])
             _emit_camera_status(socketio, capture_service)
             return jsonify(calibration_payload)
         except Exception as exc:
@@ -503,7 +499,7 @@ def create_app():
             )
             result = calibration_recording_service.stop(str(data.get("phone_session_token") or ""), _base_url())
             calibration_payload = _calibration_to_dict(result.calibration, result.status)
-            _emit_phone_recording_commands(socketio, phone_commands or [result.phone_command], calibration_payload, phone_service)
+            _emit_phone_recording_commands(socketio, phone_commands or [result.phone_command])
             _emit_camera_status(socketio, capture_service)
             return jsonify(calibration_payload)
         except Exception as exc:
@@ -602,23 +598,14 @@ def _emit_camera_status(socketio: SocketIO, capture_service) -> None:
     socketio.emit("camera_status", [_camera_to_dict(c) for c in capture_service.list_cameras()])
 
 
-def _emit_phone_recording_command(socketio: SocketIO, command: dict | None, session_payload: dict, phone_service) -> None:
+def _emit_phone_recording_command(socketio: SocketIO, command: dict | None) -> None:
     if command:
-        socketio.emit(
-            "phone_recording_command",
-            {
-                **command,
-                "session": session_payload,
-                "settings": phone_service.settings_payload(),
-            },
-        )
+        socketio.emit("phone_recording_command", command)
 
 
 def _emit_phone_recording_commands(
     socketio: SocketIO,
     commands: list[dict | None],
-    session_payload: dict,
-    phone_service,
 ) -> None:
     seen_commands: set[tuple[str, str, str]] = set()
     for command in commands:
@@ -631,7 +618,7 @@ def _emit_phone_recording_commands(
         if not token or key in seen_commands:
             continue
         seen_commands.add(key)
-        _emit_phone_recording_command(socketio, command, session_payload, phone_service)
+        _emit_phone_recording_command(socketio, command)
 
 
 def _phone_recording_commands_for_cameras(
