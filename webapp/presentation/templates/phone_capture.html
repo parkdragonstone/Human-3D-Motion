@@ -12,14 +12,13 @@
         token: "{{ session_token }}",
         cameraLabel: "{{ camera_label }}",
         frameRate: "{{ phone_settings.frame_rate }}",
-        orientation: "{{ phone_settings.orientation }}",
         resolution: "{{ phone_settings.resolution }}",
       };
     </script>
     <script defer type="module" src="{{ static_asset('dist/phone_capture.js') }}"></script>
   </head>
   <body class="phone-capture-body">
-    <main class="phone-capture-shell" data-orientation="{{ phone_settings.orientation }}">
+    <main class="phone-capture-shell">
       <video id="phonePreview" autoplay playsinline muted></video>
       <div class="phone-top-bar">
         <button type="button" data-phone-leave aria-label="Leave session">x</button>

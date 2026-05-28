@@ -49,7 +49,7 @@ def create_app():
     phone_service = services.phone_service
     calibration_service = services.calibration_service
     calibration_recording_service = services.calibration_recording_service
-    phone_socket_labels: dict[str, str] = {}
+    phone_socket_sessions: dict[str, dict[str, str]] = {}
 
     @app.context_processor
     def static_asset_helpers():
@@ -96,7 +96,7 @@ def create_app():
             request.form.get("capture_mode", capture_service.camera_settings()["capture_mode"]),
             int(request.form.get("phone_camera_count", capture_service.camera_settings()["phone_camera_count"])),
             int(request.form.get("phone_frame_rate", capture_service.camera_settings()["phone_frame_rate"])),
-            "landscape",
+            request.form.get("phone_resolution", capture_service.camera_settings()["phone_resolution"]),
         )
         _emit_camera_status(socketio, capture_service)
         return redirect(url_for("capture_page"))
@@ -309,7 +309,7 @@ def create_app():
                 str(data.get("capture_mode", capture_service.camera_settings()["capture_mode"])).lower(),
                 int(data.get("phone_camera_count", capture_service.camera_settings()["phone_camera_count"])),
                 int(data.get("phone_frame_rate", capture_service.camera_settings()["phone_frame_rate"])),
-                "landscape",
+                str(data.get("phone_resolution", capture_service.camera_settings()["phone_resolution"])).lower(),
             )
             _emit_camera_status(socketio, capture_service)
             return jsonify(capture_service.camera_settings())
@@ -327,7 +327,7 @@ def create_app():
             str(data.get("capture_mode", "sony")).lower(),
             int(data.get("phone_camera_count", capture_service.camera_settings()["phone_camera_count"])),
             int(data.get("phone_frame_rate", capture_service.camera_settings()["phone_frame_rate"])),
-            "landscape",
+            str(data.get("phone_resolution", capture_service.camera_settings()["phone_resolution"])).lower(),
         )
         _emit_camera_status(socketio, capture_service)
         return jsonify(capture_service.camera_settings())
@@ -419,7 +419,15 @@ def create_app():
                 _base_url(),
             )
             session_payload = _session_to_dict(media_view_service.session_view(result.session))
-            _emit_phone_recording_command(socketio, result.phone_command, session_payload, phone_service)
+            phone_commands = _phone_recording_commands_for_cameras(
+                "start",
+                camera_ids,
+                capture_service,
+                phone_socket_sessions,
+            )
+            for command in phone_commands:
+                phone_service.start_session(command["token"], result.session)
+            _emit_phone_recording_commands(socketio, phone_commands or [result.phone_command], session_payload, phone_service)
             _emit_camera_status(socketio, capture_service)
             socketio.emit("capture_status", {"status": result.status, "session": session_payload})
             return jsonify(session_payload)
@@ -430,9 +438,17 @@ def create_app():
     def api_stop_capture():
         try:
             data = request.get_json(silent=True) or {}
+            active_capture = capture_service.active_capture()
+            active_camera_ids = active_capture.camera_ids if active_capture else []
+            phone_commands = _phone_recording_commands_for_cameras(
+                "stop",
+                active_camera_ids,
+                capture_service,
+                phone_socket_sessions,
+            )
             result = capture_recording_service.stop(str(data.get("phone_session_token") or ""), _base_url())
             session_payload = _session_to_dict(media_view_service.session_view(result.session))
-            _emit_phone_recording_command(socketio, result.phone_command, session_payload, phone_service)
+            _emit_phone_recording_commands(socketio, phone_commands or [result.phone_command], session_payload, phone_service)
             _emit_camera_status(socketio, capture_service)
             socketio.emit("capture_status", {"status": result.status, "session": session_payload})
             return jsonify(session_payload)
@@ -448,44 +464,48 @@ def create_app():
                 mode,
                 str(data.get("project_name", "")),
                 str(data.get("intrinsic_camera_label", "")),
-                {
-                    "checker_board_type": data.get("checker_board_type"),
-                    "aruco_dictionary": data.get("aruco_dictionary"),
-                    "checker_board_size_mm": data.get("checker_board_size_mm"),
-                    "marker_size_mm": data.get("marker_size_mm"),
-                    "checker_board_columns": data.get("checker_board_columns"),
-                    "checker_board_rows": data.get("checker_board_rows"),
-                    "object_points": data.get("object_points"),
-                },
                 str(data.get("phone_session_token") or ""),
                 _base_url(),
             )
-            if result.phone_command:
-                _emit_phone_recording_command(
-                    socketio,
-                    result.phone_command,
-                    _calibration_to_dict(result.calibration, result.status),
-                    phone_service,
+            calibration_payload = _calibration_to_dict(result.calibration, result.status)
+            phone_commands = _phone_recording_commands_for_cameras(
+                "start",
+                result.calibration.record_camera_ids,
+                capture_service,
+                phone_socket_sessions,
+            )
+            for command in phone_commands:
+                phone_service.start_calibration(
+                    command["token"],
+                    result.calibration.mode,
+                    result.calibration.project_name,
+                    str(result.calibration.output_dir),
+                    result.calibration.save_camera_labels,
                 )
+            _emit_phone_recording_commands(socketio, phone_commands or [result.phone_command], calibration_payload, phone_service)
             _emit_camera_status(socketio, capture_service)
-            return jsonify(_calibration_to_dict(result.calibration, result.status))
+            return jsonify(calibration_payload)
         except Exception as exc:
+            app.logger.exception("Failed to start calibration recording")
             return jsonify({"error": str(exc)}), 400
 
     @app.post("/api/calibration/stop")
     def api_stop_calibration():
         data = request.get_json(silent=True) or {}
         try:
+            active_calibration = calibration_service.active()
+            active_camera_ids = active_calibration.record_camera_ids if active_calibration else []
+            phone_commands = _phone_recording_commands_for_cameras(
+                "stop",
+                active_camera_ids,
+                capture_service,
+                phone_socket_sessions,
+            )
             result = calibration_recording_service.stop(str(data.get("phone_session_token") or ""), _base_url())
-            if result.phone_command:
-                _emit_phone_recording_command(
-                    socketio,
-                    result.phone_command,
-                    _calibration_to_dict(result.calibration, result.status),
-                    phone_service,
-                )
+            calibration_payload = _calibration_to_dict(result.calibration, result.status)
+            _emit_phone_recording_commands(socketio, phone_commands or [result.phone_command], calibration_payload, phone_service)
             _emit_camera_status(socketio, capture_service)
-            return jsonify(_calibration_to_dict(result.calibration, result.status))
+            return jsonify(calibration_payload)
         except Exception as exc:
             return jsonify({"error": str(exc)}), 400
 
@@ -536,7 +556,10 @@ def create_app():
     def on_phone_register(payload):
         camera_label = _payload_camera_label(payload)
         if camera_label:
-            phone_socket_labels[request.sid] = camera_label
+            phone_socket_sessions[request.sid] = {
+                "camera_label": camera_label,
+                "token": str(payload.get("token") or ""),
+            }
             capture_service.mark_phone_connected(camera_label)
             _emit_camera_status(socketio, capture_service)
         socketio.emit("phone_registered", payload)
@@ -545,7 +568,10 @@ def create_app():
     def on_phone_preview_status(payload):
         camera_label = _payload_camera_label(payload)
         if camera_label:
-            phone_socket_labels[request.sid] = camera_label
+            phone_socket_sessions[request.sid] = {
+                "camera_label": camera_label,
+                "token": str(payload.get("token") or ""),
+            }
             if str(payload.get("status")) == "blocked":
                 capture_service.mark_phone_blocked(camera_label, str(payload.get("message") or ""))
             else:
@@ -563,7 +589,8 @@ def create_app():
 
     @socketio.on("disconnect")
     def on_disconnect():
-        camera_label = phone_socket_labels.pop(request.sid, "")
+        phone_session = phone_socket_sessions.pop(request.sid, {})
+        camera_label = phone_session.get("camera_label", "")
         if camera_label:
             capture_service.mark_phone_disconnected(camera_label)
             _emit_camera_status(socketio, capture_service)
@@ -585,6 +612,56 @@ def _emit_phone_recording_command(socketio: SocketIO, command: dict | None, sess
                 "settings": phone_service.settings_payload(),
             },
         )
+
+
+def _emit_phone_recording_commands(
+    socketio: SocketIO,
+    commands: list[dict | None],
+    session_payload: dict,
+    phone_service,
+) -> None:
+    seen_commands: set[tuple[str, str, str]] = set()
+    for command in commands:
+        if not command:
+            continue
+        token = str(command.get("token") or "")
+        camera_label = str(command.get("camera_label") or "")
+        command_name = str(command.get("command") or "")
+        key = (token, camera_label, command_name)
+        if not token or key in seen_commands:
+            continue
+        seen_commands.add(key)
+        _emit_phone_recording_command(socketio, command, session_payload, phone_service)
+
+
+def _phone_recording_commands_for_cameras(
+    command: str,
+    camera_ids: list[str],
+    capture_service,
+    phone_socket_sessions: dict[str, dict[str, str]],
+) -> list[dict]:
+    if capture_service.camera_settings()["capture_mode"] != "phone":
+        return []
+    cameras_by_id = {camera.camera_id: camera for camera in capture_service.list_cameras()}
+    selected_labels = {
+        cameras_by_id[camera_id].label
+        for camera_id in camera_ids
+        if camera_id in cameras_by_id
+    }
+    commands: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    for item in phone_socket_sessions.values():
+        token = item.get("token")
+        camera_label = item.get("camera_label")
+        if not token or camera_label not in selected_labels or (token, camera_label) in seen:
+            continue
+        seen.add((token, camera_label))
+        commands.append({
+            "command": command,
+            "token": token,
+            "camera_label": camera_label,
+        })
+    return sorted(commands, key=lambda item: (item["camera_label"], item["token"]))
 
 
 def _root_selection_to_dict(selection, root_key: str) -> dict:

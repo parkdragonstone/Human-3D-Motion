@@ -98,6 +98,13 @@
           {% endfor %}
         </select>
       </label>
+      <label data-phone-setting {% if camera_settings.capture_mode != "phone" %}hidden{% endif %}>
+        Resolution
+        <select name="phone_resolution">
+          <option value="720" {% if camera_settings.phone_resolution == "720" %}selected{% endif %}>720</option>
+          <option value="1080" {% if camera_settings.phone_resolution == "1080" %}selected{% endif %}>1080</option>
+        </select>
+      </label>
       <button class="button secondary" type="submit">Apply Camera Settings</button>
     </form>
     <div class="phone-qr-panel" data-phone-panel {% if camera_settings.capture_mode != "phone" %}hidden{% endif %}>
@@ -111,7 +118,7 @@
             <img src="{{ slot.qr_data_url }}" alt="{{ slot.camera_label }} QR code">
             <div>
               <strong>{{ slot.camera_label }}</strong>
-              <span>{{ camera_settings.phone_frame_rate }} fps - 720p</span>
+              <span>{{ camera_settings.phone_frame_rate }} fps - {{ camera_settings.phone_resolution }}p</span>
             </div>
           </article>
         {% endfor %}
@@ -133,9 +140,7 @@
                 </span>
               {% endif %}
             </span>
-            <span class="camera-meta">
-              <span class="camera-index">{{ camera.label }}</span>
-            </span>
+            <span class="camera-meta"><span class="camera-index">{{ camera.label }}</span></span>
           </label>
         {% endfor %}
       </div>

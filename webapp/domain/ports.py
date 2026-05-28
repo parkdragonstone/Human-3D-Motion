@@ -73,12 +73,11 @@ class SettingsRepository(Protocol):
     def set_phone_frame_rate(self, frame_rate: int) -> None:
         ...
 
-    def get_phone_orientation(self) -> str:
+    def get_phone_resolution(self) -> str:
         ...
 
-    def set_phone_orientation(self, orientation: str) -> None:
+    def set_phone_resolution(self, resolution: str) -> None:
         ...
-
 
 class DirectorySelector(Protocol):
     def select_directory(self, initial_dir: str) -> str | None:

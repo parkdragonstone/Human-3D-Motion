@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import base64
 import io
-import json
 import mimetypes
 import secrets
 import shutil
@@ -73,11 +72,10 @@ class PhoneCaptureService:
         return self._draft
 
     def settings_payload(self) -> dict:
-        orientation = self._settings.get_phone_orientation()
+        resolution = self._settings.get_phone_resolution()
         return {
             "frame_rate": self._settings.get_phone_frame_rate(),
-            "orientation": orientation,
-            "resolution": _resolution_for_orientation(orientation),
+            "resolution": _resolution_size(resolution),
             "camera_count": self._settings.get_phone_camera_count(),
         }
 
@@ -86,7 +84,6 @@ class PhoneCaptureService:
         self._active_calibrations.pop(token, None)
 
     def stop_session(self, token: str) -> CaptureSession | None:
-        self._active_calibrations.pop(token, None)
         return self._active_sessions.get(token)
 
     def start_calibration(
@@ -140,23 +137,7 @@ class PhoneCaptureService:
             f"{session.timestamp}_{camera_label}{extension}"
         )
         _write_upload(upload.stream, output_path)
-
-        metadata = {
-            "capture_mode": "phone",
-            "camera_label": camera_label,
-            "requested_fps": self._settings.get_phone_frame_rate(),
-            "orientation": self._settings.get_phone_orientation(),
-            "requested_resolution": _resolution_for_orientation(self._settings.get_phone_orientation()),
-            "content_type": content_type,
-            "user_agent": upload.user_agent,
-            "actual_fps": upload.actual_fps,
-            "actual_width": upload.actual_width,
-            "actual_height": upload.actual_height,
-            "hand": session.subject.hand,
-        }
-        metadata_path = output_path.with_suffix(output_path.suffix + ".json")
-        metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
-        return {"path": str(output_path), "metadata_path": str(metadata_path)}
+        return {"path": str(output_path)}
 
     def _save_calibration_upload(
         self,
@@ -178,21 +159,7 @@ class PhoneCaptureService:
             extension = ".mp4"
         output_path = output_dir / f"{calibration.mode}_{calibration.project_name}_{camera_label}{extension}"
         _write_upload(upload.stream, output_path)
-
-        metadata = {
-            "capture_mode": "phone_calibration",
-            "calibration_mode": calibration.mode,
-            "project_name": calibration.project_name,
-            "camera_label": camera_label,
-            "content_type": content_type,
-            "user_agent": upload.user_agent,
-            "actual_fps": upload.actual_fps,
-            "actual_width": upload.actual_width,
-            "actual_height": upload.actual_height,
-        }
-        metadata_path = output_path.with_suffix(output_path.suffix + ".json")
-        metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
-        return {"path": str(output_path), "metadata_path": str(metadata_path)}
+        return {"path": str(output_path)}
 
     def _slot(self, base_url: str, token: str, idx: int) -> PhoneSlot:
         camera_label = f"cam{idx:02d}"
@@ -230,5 +197,5 @@ def _draft_matches_base_url(draft: PhoneDraft, base_url: str) -> bool:
     return all(slot.join_url.startswith(base_url) for slot in draft.slots)
 
 
-def _resolution_for_orientation(orientation: str) -> str:
-    return "720x1280" if orientation == "portrait" else "1280x720"
+def _resolution_size(resolution: str) -> str:
+    return "1920x1080" if resolution == "1080" else "1280x720"

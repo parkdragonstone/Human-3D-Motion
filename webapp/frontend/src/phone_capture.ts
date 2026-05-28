@@ -7,7 +7,6 @@ declare global {
       token: string;
       cameraLabel: string;
       frameRate: number;
-      orientation: "landscape" | "portrait";
       resolution: string;
     };
     io?: () => PhoneSocket;
@@ -22,10 +21,10 @@ interface PhoneSocket {
 interface PhoneRecordingCommand {
   command: "start" | "stop";
   token: string;
+  camera_label?: string;
   session: CaptureSession;
   settings: {
     frame_rate: number;
-    orientation: "landscape" | "portrait";
     resolution: string;
   };
 }
@@ -57,20 +56,20 @@ function setRecording(active: boolean): void {
   document.documentElement.classList.toggle("is-phone-recording", active);
 }
 
-function videoSize(orientation: "landscape" | "portrait"): { width: number; height: number } {
-  const landscape = orientation === "landscape";
+function videoSize(resolution: string): { width: number; height: number } {
+  const match = /^(\d+)x(\d+)$/.exec(resolution);
+  if (!match) return { width: 1280, height: 720 };
   return {
-    width: landscape ? 1280 : 720,
-    height: landscape ? 720 : 1280,
+    width: Number(match[1]),
+    height: Number(match[2]),
   };
 }
 
 function mediaConstraints(
   frameRate: number,
-  orientation: "landscape" | "portrait",
   frameRateConstraint: ConstrainDouble,
 ): MediaStreamConstraints {
-  const size = videoSize(orientation);
+  const size = videoSize(config?.resolution || "");
   return {
     audio: false,
     video: {
@@ -107,7 +106,7 @@ async function openCamera(): Promise<MediaStream> {
   for (const frameRateConstraint of highSpeedConstraintAttempts(config.frameRate)) {
     try {
       return await navigator.mediaDevices.getUserMedia(
-        mediaConstraints(config.frameRate, config.orientation, frameRateConstraint),
+        mediaConstraints(config.frameRate, frameRateConstraint),
       );
     } catch (error) {
       if (error instanceof DOMException && error.name === "NotAllowedError") {
@@ -240,15 +239,21 @@ async function stopRecording(command: PhoneRecordingCommand): Promise<void> {
   if (clipCount) clipCount.textContent = `${clips} clips`;
 
   const blob = new Blob(chunks, { type: recorder.mimeType || "video/mp4" });
+  if (blob.size === 0) {
+    throw new Error("recorded_video_is_empty");
+  }
   const form = new FormData();
   form.append("video", blob, `${config.cameraLabel}.mp4`);
   form.append("actual_fps", actualFrameRate);
   form.append("actual_width", actualWidth);
   form.append("actual_height", actualHeight);
-  await fetch(`/api/phone-sessions/${command.token}/${config.cameraLabel}/upload`, {
+  const uploadResponse = await fetch(`/api/phone-sessions/${command.token}/${config.cameraLabel}/upload`, {
     method: "POST",
     body: form,
   });
+  if (!uploadResponse.ok) {
+    throw new Error(await uploadResponse.text());
+  }
   await postJson(`/api/phone-sessions/${command.token}/finalize`, {});
 }
 
@@ -258,12 +263,12 @@ if (config && window.io) {
     token: config.token,
     camera_label: config.cameraLabel,
     frame_rate: config.frameRate,
-    orientation: config.orientation,
     resolution: config.resolution,
   });
   socket.on("phone_recording_command", (payload) => {
     const command = payload as PhoneRecordingCommand;
     if (command.token !== config.token) return;
+    if (command.camera_label && command.camera_label !== config.cameraLabel) return;
     if (command.command === "start") startRecording();
     if (command.command === "stop") stopRecording(command).catch(() => setConnection("Upload failed"));
   });

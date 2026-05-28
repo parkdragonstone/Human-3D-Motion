@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import re
 import shutil
 from dataclasses import dataclass, field
@@ -20,7 +19,6 @@ class ActiveCalibration:
     output_dir: Path
     record_camera_ids: list[str]
     save_camera_labels: set[str]
-    metadata: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -57,7 +55,6 @@ class CalibrationService:
         project_name: str,
         record_camera_ids: list[str],
         save_camera_labels: set[str],
-        metadata: dict,
     ) -> ActiveCalibration:
         if self._active is not None:
             raise RuntimeError("calibration_already_running")
@@ -77,10 +74,8 @@ class CalibrationService:
             output_dir=output_dir,
             record_camera_ids=record_camera_ids,
             save_camera_labels=save_camera_labels,
-            metadata=metadata,
         )
         self._active = calibration
-        self._write_metadata(calibration, "recording")
         return calibration
 
     def stop(self) -> ActiveCalibration:
@@ -88,7 +83,6 @@ class CalibrationService:
             raise RuntimeError("calibration_not_running")
         calibration = self._active
         self._active = None
-        self._write_metadata(calibration, "captured")
         return calibration
 
     def recording_subject(self, calibration: ActiveCalibration) -> SubjectInfo:
@@ -98,14 +92,6 @@ class CalibrationService:
             weight_kg=0,
             hand=calibration.project_name,
         )
-
-    def remove_unselected_videos(self, calibration: ActiveCalibration) -> None:
-        for video in Path(calibration.output_dir).glob("*.mp4"):
-            if not any(video.stem.lower().endswith(label.lower()) for label in calibration.save_camera_labels):
-                video.unlink()
-                metadata = video.with_suffix(video.suffix + ".json")
-                if metadata.exists():
-                    metadata.unlink()
 
     def active(self) -> ActiveCalibration | None:
         return self._active
@@ -180,20 +166,6 @@ class CalibrationService:
         if record is None:
             raise ValueError("calibration_not_found")
         return record
-
-    def _write_metadata(self, calibration: ActiveCalibration, status: str) -> None:
-        payload = {
-            "calibration_id": calibration.calibration_id,
-            "mode": calibration.mode,
-            "project_name": calibration.project_name,
-            "timestamp": calibration.timestamp,
-            "status": status,
-            "record_camera_ids": calibration.record_camera_ids,
-            "save_camera_labels": sorted(calibration.save_camera_labels),
-            **calibration.metadata,
-        }
-        (calibration.output_dir / "calibration.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
-
 
 def _mode(value: str) -> str:
     normalized = str(value or "INTR").strip().upper()

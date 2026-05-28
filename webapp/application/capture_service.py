@@ -74,7 +74,7 @@ class CaptureService:
         capture_mode: str,
         phone_camera_count: int | None = None,
         phone_frame_rate: int | None = None,
-        phone_orientation: str | None = None,
+        phone_resolution: str | None = None,
     ) -> None:
         self._settings.set_capture_mode(capture_mode)
         if phone_camera_count is not None:
@@ -83,8 +83,8 @@ class CaptureService:
                 self._camera_controller.set_phone_camera_count(phone_camera_count)
         if phone_frame_rate is not None:
             self._settings.set_phone_frame_rate(phone_frame_rate)
-        if phone_orientation is not None:
-            self._settings.set_phone_orientation(phone_orientation)
+        if phone_resolution is not None:
+            self._settings.set_phone_resolution(phone_resolution)
 
     def camera_settings(self) -> dict:
         return {
@@ -94,7 +94,7 @@ class CaptureService:
             "capture_mode": self._settings.get_capture_mode(),
             "phone_camera_count": self._settings.get_phone_camera_count(),
             "phone_frame_rate": self._settings.get_phone_frame_rate(),
-            "phone_orientation": self._settings.get_phone_orientation(),
+            "phone_resolution": self._settings.get_phone_resolution(),
             "backend": self._camera_controller.__class__.__name__,
         }
 

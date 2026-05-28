@@ -16,6 +16,11 @@ interface PhonePreviewFrame {
   image: string;
 }
 
+interface PhoneRegistration {
+  token: string;
+  camera_label: string;
+}
+
 interface CalibrationStatus {
   calibration_id: string;
   mode: "INTR" | "EXTR";
@@ -276,6 +281,13 @@ function currentPhoneSessionToken(): string {
   return phoneTokenInput?.value || phoneQrList?.dataset.phoneSessionToken || "";
 }
 
+function adoptPhoneSessionToken(token: string): void {
+  const normalized = String(token || "").trim();
+  if (!normalized || normalized === currentPhoneSessionToken()) return;
+  if (phoneQrList) phoneQrList.dataset.phoneSessionToken = normalized;
+  if (phoneTokenInput) phoneTokenInput.value = normalized;
+}
+
 function renderCameras(cameras: CameraStatus[]): void {
   if (!cameraList) return;
   lastCameras = cameras;
@@ -370,6 +382,7 @@ function updateCalibrationTargetOptions(cameras: CameraStatus[]): void {
 }
 
 function renderPhonePreviewFrame(frame: PhonePreviewFrame): void {
+  adoptPhoneSessionToken(frame.token);
   if (frame.token !== currentPhoneSessionToken()) return;
   phonePreviewFrames.set(frame.camera_label, frame.image);
   const image = cameraList?.querySelector<HTMLImageElement>(
@@ -446,6 +459,46 @@ async function deleteCalibration(folderName: string): Promise<void> {
   await refreshCalibrations();
 }
 
+function confirmCalibrationDelete(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "confirm-modal-overlay";
+    overlay.innerHTML = `
+      <div class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="deleteCalibrationTitle">
+        <h2 id="deleteCalibrationTitle">Delete calibration?</h2>
+        <p>This action cannot be undone.</p>
+        <div class="confirm-modal-actions">
+          <button class="button secondary" type="button" data-confirm-cancel>Cancel</button>
+          <button class="button confirm-danger" type="button" data-confirm-delete>Delete</button>
+        </div>
+      </div>
+    `;
+
+    const close = (confirmed: boolean) => {
+      document.removeEventListener("keydown", handleKeydown);
+      overlay.remove();
+      resolve(confirmed);
+    };
+    const handleKeydown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        close(false);
+      }
+    };
+
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) {
+        close(false);
+      }
+    });
+    overlay.querySelector<HTMLButtonElement>("[data-confirm-cancel]")?.addEventListener("click", () => close(false));
+    overlay.querySelector<HTMLButtonElement>("[data-confirm-delete]")?.addEventListener("click", () => close(true));
+
+    document.addEventListener("keydown", handleKeydown);
+    document.body.appendChild(overlay);
+    overlay.querySelector<HTMLButtonElement>("[data-confirm-delete]")?.focus();
+  });
+}
+
 async function runCalibration(folderName: string, extraPayload: Record<string, unknown> = {}): Promise<CalibrationRunResult> {
   const payload = await calibrationDetailPayload();
   if (!payload) return { ok: false, error: "calibration_setup_required" };
@@ -493,6 +546,7 @@ async function applyCameraSettings(): Promise<void> {
     live_view_frame_rate: String(data.get("live_view_frame_rate") || "low"),
     phone_camera_count: Number(data.get("phone_camera_count") || 1),
     phone_frame_rate: Number(data.get("phone_frame_rate") || 120),
+    phone_resolution: String(data.get("phone_resolution") || "720"),
   });
   applyCaptureMode(settings.capture_mode);
   await refreshCameras();
@@ -560,22 +614,13 @@ function errorMessage(error: unknown): string {
 async function calibrationPayload(): Promise<Record<string, unknown> | null> {
   if (!calibrationSetupForm || !calibrationSetupForm.reportValidity()) return null;
   const data = new FormData(calibrationSetupForm);
-  const detailPayload = await calibrationDetailPayload();
-  if (!detailPayload) return null;
   const target = calibrationTargetSelect?.value || "extrinsic";
   const intrinsic = target.startsWith("intrinsic:");
   const intrinsicCameraLabel = intrinsic ? target.slice("intrinsic:".length) : "";
   return {
     project_name: String(data.get("project_name") || ""),
     calibration_mode: intrinsic ? "intrinsic" : "extrinsic",
-    checker_board_type: detailPayload.checker_board_type,
-    aruco_dictionary: detailPayload.aruco_dictionary,
-    checker_board_size_mm: detailPayload.checker_board_size_mm,
-    marker_size_mm: detailPayload.marker_size_mm,
-    checker_board_columns: detailPayload.checker_board_columns,
-    checker_board_rows: detailPayload.checker_board_rows,
     intrinsic_camera_label: intrinsicCameraLabel,
-    object_points: detailPayload.object_points,
     phone_session_token: currentPhoneSessionToken(),
   };
 }
@@ -952,6 +997,7 @@ calibrationList?.addEventListener("click", async (event) => {
   if (!button) return;
   const folderName = button.dataset.deleteCalibrationFolder;
   if (!folderName) return;
+  if (!(await confirmCalibrationDelete())) return;
   button.disabled = true;
   try {
     await deleteCalibration(folderName);
@@ -977,7 +1023,14 @@ modeInputs.forEach((input) => {
 if (window.io) {
   const socket = window.io();
   socket.on("camera_status", (payload) => renderCameras(payload as CameraStatus[]));
+  socket.on("phone_registered", (payload) => {
+    const registration = payload as PhoneRegistration;
+    adoptPhoneSessionToken(registration.token);
+  });
   socket.on("phone_preview_frame", (payload) => renderPhonePreviewFrame(payload as PhonePreviewFrame));
+  socket.on("phone_upload_complete", () => {
+    refreshCalibrations().catch((error) => renderState("Issue", errorMessage(error)));
+  });
 }
 
 syncCalibrationMode();

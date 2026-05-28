@@ -16,6 +16,11 @@ interface PhonePreviewFrame {
   image: string;
 }
 
+interface PhoneRegistration {
+  token: string;
+  camera_label: string;
+}
+
 const cameraList = document.querySelector<HTMLElement>("#cameraList");
 const cameraCount = document.querySelector<HTMLElement>("#cameraCount");
 const captureState = document.querySelector<HTMLElement>("#captureState");
@@ -63,9 +68,7 @@ function renderCameras(cameras: CameraStatus[]): void {
           <span class="live-view-frame">
             ${liveView}
           </span>
-          <span class="camera-meta">
-            <span class="camera-index">${camera.label}</span>
-          </span>
+          <span class="camera-meta"><span class="camera-index">${camera.label}</span></span>
         </label>
       `;
     })
@@ -76,7 +79,15 @@ function currentPhoneSessionToken(): string {
   return phoneTokenInput?.value || phoneQrList?.dataset.phoneSessionToken || "";
 }
 
+function adoptPhoneSessionToken(token: string): void {
+  const normalized = String(token || "").trim();
+  if (!normalized || normalized === currentPhoneSessionToken()) return;
+  if (phoneQrList) phoneQrList.dataset.phoneSessionToken = normalized;
+  if (phoneTokenInput) phoneTokenInput.value = normalized;
+}
+
 function renderPhonePreviewFrame(frame: PhonePreviewFrame): void {
+  adoptPhoneSessionToken(frame.token);
   if (frame.token !== currentPhoneSessionToken()) return;
   phonePreviewFrames.set(frame.camera_label, frame.image);
   const image = cameraList?.querySelector<HTMLImageElement>(
@@ -308,6 +319,7 @@ async function applyCameraSettings(): Promise<void> {
     live_view_frame_rate: String(data.get("live_view_frame_rate") || "low"),
     phone_camera_count: Number(data.get("phone_camera_count") || 1),
     phone_frame_rate: Number(data.get("phone_frame_rate") || 120),
+    phone_resolution: String(data.get("phone_resolution") || "720"),
   };
   const settings = await postJson<CameraSettings>("/api/settings/cameras", payload);
   applyCaptureMode(settings.capture_mode);
@@ -410,7 +422,9 @@ async function startCapture(): Promise<void> {
 }
 
 async function stopCapture(): Promise<void> {
-  const session = await postJson<CaptureSession>("/api/capture/stop", {});
+  const session = await postJson<CaptureSession>("/api/capture/stop", {
+    phone_session_token: currentPhoneSessionToken(),
+  });
   renderState("Ready", "Recording saved");
   setCaptureActionRecording(false);
   await refreshCameras();
@@ -494,12 +508,19 @@ modeInputs.forEach((input) => {
 if (window.io) {
   const socket = window.io();
   socket.on("camera_status", (payload) => renderCameras(payload as CameraStatus[]));
+  socket.on("phone_registered", (payload) => {
+    const registration = payload as PhoneRegistration;
+    adoptPhoneSessionToken(registration.token);
+  });
   socket.on("phone_preview_frame", (payload) => renderPhonePreviewFrame(payload as PhonePreviewFrame));
   socket.on("capture_status", (payload) => {
     const event = payload as CaptureStatusPayload;
     const recording = event.status === "recording";
     renderState(recording ? "Recording" : "Ready", event.session.timestamp);
     setCaptureActionRecording(recording);
+    refreshSessions().catch(() => undefined);
+  });
+  socket.on("phone_upload_complete", () => {
     refreshSessions().catch(() => undefined);
   });
 }

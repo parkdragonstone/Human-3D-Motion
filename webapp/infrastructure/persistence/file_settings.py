@@ -103,15 +103,15 @@ class JsonSettingsRepository(SettingsRepository):
         data["phone_frame_rate"] = value if value in {30, 60, 120, 240} else 120
         self._settings_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
-    def get_phone_orientation(self) -> str:
+    def get_phone_resolution(self) -> str:
         data = self._read()
-        value = str(data.get("phone_orientation") or "landscape").lower()
-        return value if value in {"landscape", "portrait"} else "landscape"
+        value = str(data.get("phone_resolution") or "720").lower().removesuffix("p")
+        return value if value in {"720", "1080"} else "720"
 
-    def set_phone_orientation(self, orientation: str) -> None:
+    def set_phone_resolution(self, resolution: str) -> None:
         data = self._read()
-        value = str(orientation or "landscape").lower()
-        data["phone_orientation"] = value if value in {"landscape", "portrait"} else "landscape"
+        value = str(resolution or "720").lower().removesuffix("p")
+        data["phone_resolution"] = value if value in {"720", "1080"} else "720"
         self._settings_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
     def _read(self) -> dict:

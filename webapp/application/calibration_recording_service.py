@@ -33,18 +33,24 @@ class CalibrationRecordingService:
         mode: str,
         project_name: str,
         intrinsic_camera_label: str,
-        metadata: dict,
         phone_session_token: str,
         base_url: str,
     ) -> CalibrationRecordingResult:
         connected_cameras = [camera for camera in self._capture_service.list_cameras() if camera.connected]
-        record_camera_ids = [camera.camera_id for camera in connected_cameras]
         if mode == "INTR":
             selected_label = str(intrinsic_camera_label or "").strip()
             if not selected_label:
                 raise ValueError("intrinsic_camera_required")
+            selected_camera = next(
+                (camera for camera in connected_cameras if camera.label.lower() == selected_label.lower()),
+                None,
+            )
+            if selected_camera is None:
+                raise ValueError(f"intrinsic_camera_not_connected: {selected_label}")
+            record_camera_ids = [selected_camera.camera_id]
             save_camera_labels = {selected_label}
         else:
+            record_camera_ids = [camera.camera_id for camera in connected_cameras]
             save_camera_labels = {camera.label for camera in connected_cameras}
 
         calibration = self._calibration_service.start(
@@ -52,9 +58,13 @@ class CalibrationRecordingService:
             project_name,
             record_camera_ids,
             save_camera_labels,
-            metadata,
         )
-        self._camera_controller.start_recording(record_camera_ids)
+        try:
+            self._camera_controller.start_recording(record_camera_ids)
+        except Exception:
+            if self._calibration_service.active() is calibration:
+                self._calibration_service.stop()
+            raise
         phone_command = None
         if self._capture_service.camera_settings()["capture_mode"] == "phone":
             token = str(phone_session_token or self._phone_service.current_or_create_draft(base_url).token)
@@ -76,8 +86,6 @@ class CalibrationRecordingService:
             self._calibration_service.recording_subject(calibration),
             calibration.timestamp,
         )
-        if calibration.mode == "INTR":
-            self._calibration_service.remove_unselected_videos(calibration)
         phone_command = None
         if self._capture_service.camera_settings()["capture_mode"] == "phone":
             token = str(phone_session_token or self._phone_service.current_or_create_draft(base_url).token)

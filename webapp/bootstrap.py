@@ -87,7 +87,7 @@ def create_app_services() -> AppServices:
         settings.get_capture_mode(),
         settings.get_phone_camera_count(),
         settings.get_phone_frame_rate(),
-        "landscape",
+        settings.get_phone_resolution(),
     )
 
     return AppServices(

@@ -24,7 +24,7 @@ if __name__ == "__main__":
     socketio.run(
         app,
         host=os.environ.get("BASEBALL_MOTION_HOST", "0.0.0.0"),
-        port=int(os.environ.get("BASEBALL_MOTION_PORT", "5000")),
+        port=int(os.environ.get("BASEBALL_MOTION_PORT", "9090")),
         debug=os.environ.get("BASEBALL_MOTION_DEBUG") == "1",
         use_reloader=False,
         allow_unsafe_werkzeug=True,

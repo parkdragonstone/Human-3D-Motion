@@ -42,7 +42,7 @@ export interface CameraSettings {
   capture_mode: "sony" | "phone";
   phone_camera_count: number;
   phone_frame_rate: number;
-  phone_orientation: "landscape" | "portrait";
+  phone_resolution: "720" | "1080";
   backend: string;
 }
 
