@@ -9,15 +9,23 @@
   </head>
   <body>
     <aside class="app-nav">
-      <a class="brand" href="{{ url_for('capture_page') }}">
-        <img class="brand-mark" src="{{ url_for('app_logo') }}" alt="">
-        <span>Baseball Motion</span>
-      </a>
+      <input class="app-menu-check" id="appMenuToggle" type="checkbox" aria-hidden="true">
+      <div class="app-nav-header">
+        <a class="brand" href="{{ url_for('capture_page') }}">
+          <img class="brand-mark" src="{{ url_for('app_logo') }}" alt="">
+          <span>Baseball Motion</span>
+        </a>
+        <label class="app-menu-button" for="appMenuToggle" aria-label="Open navigation menu">
+          <span></span>
+          <span></span>
+          <span></span>
+        </label>
+      </div>
       <nav>
-        <a href="{{ url_for('capture_page') }}">Capture</a>
-        <a href="{{ url_for('calibration_page') }}">Calibration</a>
-        <a href="{{ url_for('analysis_page') }}">Analysis</a>
-        <a href="{{ url_for('report_page') }}">Report</a>
+        <a class="{% if request.endpoint == 'capture_page' %}is-active{% endif %}" href="{{ url_for('capture_page') }}" {% if request.endpoint == 'capture_page' %}aria-current="page"{% endif %}>Capture</a>
+        <a class="{% if request.endpoint == 'calibration_page' %}is-active{% endif %}" href="{{ url_for('calibration_page') }}" {% if request.endpoint == 'calibration_page' %}aria-current="page"{% endif %}>Calibration</a>
+        <a class="{% if request.endpoint == 'analysis_page' %}is-active{% endif %}" href="{{ url_for('analysis_page') }}" {% if request.endpoint == 'analysis_page' %}aria-current="page"{% endif %}>Analysis</a>
+        <a class="{% if request.endpoint == 'report_page' %}is-active{% endif %}" href="{{ url_for('report_page') }}" {% if request.endpoint == 'report_page' %}aria-current="page"{% endif %}>Report</a>
       </nav>
     </aside>
     <main class="app-shell">

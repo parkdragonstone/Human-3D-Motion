@@ -42,6 +42,8 @@ let actualHeight = "";
 let socket: PhoneSocket | null = null;
 let previewFrameTimerId = 0;
 
+type VideoSize = { width: number; height: number };
+
 function setConnection(value: string): void {
   if (connectionState) connectionState.textContent = value;
 }
@@ -50,7 +52,22 @@ function setRecording(active: boolean): void {
   document.documentElement.classList.toggle("is-phone-recording", active);
 }
 
-function videoSize(resolution: string): { width: number; height: number } {
+function isPortraitViewport(): boolean {
+  const viewport = window.visualViewport;
+  const width = viewport?.width || window.innerWidth;
+  const height = viewport?.height || window.innerHeight;
+  return height > width;
+}
+
+function sizeForViewport(size: VideoSize): VideoSize {
+  const sizeIsPortrait = size.height > size.width;
+  if (sizeIsPortrait === isPortraitViewport()) {
+    return size;
+  }
+  return { width: size.height, height: size.width };
+}
+
+function videoSize(resolution: string): VideoSize {
   const match = /^(\d+)x(\d+)$/.exec(resolution);
   if (!match) return { width: 1280, height: 720 };
   return {
@@ -59,8 +76,39 @@ function videoSize(resolution: string): { width: number; height: number } {
   };
 }
 
+function exactVideoConstraint(value: number): ConstrainULong {
+  return { exact: value };
+}
+
+function displayVideoSize(video: HTMLVideoElement): VideoSize {
+  const size = { width: video.videoWidth, height: video.videoHeight };
+  return sizeForViewport(size);
+}
+
+function drawPreviewSurface(
+  context: CanvasRenderingContext2D,
+  video: HTMLVideoElement,
+  width: number,
+  height: number,
+): void {
+  const videoRatio = video.videoWidth / video.videoHeight;
+  const targetRatio = width / height;
+  let sourceX = 0;
+  let sourceY = 0;
+  let sourceWidth = video.videoWidth;
+  let sourceHeight = video.videoHeight;
+  if (videoRatio > targetRatio) {
+    sourceWidth = video.videoHeight * targetRatio;
+    sourceX = (video.videoWidth - sourceWidth) / 2;
+  } else if (videoRatio < targetRatio) {
+    sourceHeight = video.videoWidth / targetRatio;
+    sourceY = (video.videoHeight - sourceHeight) / 2;
+  }
+  context.clearRect(0, 0, width, height);
+  context.drawImage(video, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, width, height);
+}
+
 function mediaConstraints(
-  frameRate: number,
   frameRateConstraint: ConstrainDouble,
 ): MediaStreamConstraints {
   const size = videoSize(config?.resolution || "");
@@ -69,8 +117,8 @@ function mediaConstraints(
     video: {
       facingMode: { ideal: "environment" },
       frameRate: frameRateConstraint,
-      width: { ideal: size.width },
-      height: { ideal: size.height },
+      width: exactVideoConstraint(size.width),
+      height: exactVideoConstraint(size.height),
     },
   };
 }
@@ -100,7 +148,7 @@ async function openCamera(): Promise<MediaStream> {
   for (const frameRateConstraint of highSpeedConstraintAttempts(config.frameRate)) {
     try {
       return await navigator.mediaDevices.getUserMedia(
-        mediaConstraints(config.frameRate, frameRateConstraint),
+        mediaConstraints(frameRateConstraint),
       );
     } catch (error) {
       if (error instanceof DOMException && error.name === "NotAllowedError") {
@@ -109,20 +157,10 @@ async function openCamera(): Promise<MediaStream> {
       lastError = error;
     }
   }
-  try {
-    return await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: { facingMode: { ideal: "environment" } },
-    });
-  } catch (error) {
-    if (lastError instanceof Error) {
-      throw lastError;
-    }
-    if (error instanceof Error) {
-      throw error;
-    }
-    throw new Error("Camera permission failed");
+  if (lastError instanceof Error) {
+    throw lastError;
   }
+  throw new Error("Camera permission failed");
 }
 
 function actualFrameRateText(requestedFrameRate: number): string {
@@ -156,14 +194,17 @@ function startPreviewFrameStream(): void {
   previewFrameTimerId = window.setInterval(() => {
     if (!preview.videoWidth || !preview.videoHeight) return;
     const maxEdge = 640;
-    const scale = Math.min(1, maxEdge / Math.max(preview.videoWidth, preview.videoHeight));
-    canvas.width = Math.round(preview.videoWidth * scale);
-    canvas.height = Math.round(preview.videoHeight * scale);
-    context.drawImage(preview, 0, 0, canvas.width, canvas.height);
+    const displaySize = displayVideoSize(preview);
+    const scale = Math.min(1, maxEdge / Math.max(displaySize.width, displaySize.height));
+    canvas.width = Math.round(displaySize.width * scale);
+    canvas.height = Math.round(displaySize.height * scale);
+    drawPreviewSurface(context, preview, canvas.width, canvas.height);
     socket?.emit("phone_preview_frame", {
       token: config.token,
       camera_label: config.cameraLabel,
       image: canvas.toDataURL("image/jpeg", 0.62),
+      width: displaySize.width,
+      height: displaySize.height,
     });
   }, 200);
 }
@@ -175,8 +216,10 @@ async function startPreview(): Promise<void> {
   await preview.play().catch(() => undefined);
   const settings = stream.getVideoTracks()[0]?.getSettings();
   actualFrameRate = settings?.frameRate ? String(settings.frameRate) : "";
-  actualWidth = settings?.width ? String(settings.width) : "";
-  actualHeight = settings?.height ? String(settings.height) : "";
+  const settingsWidth = settings?.width || preview.videoWidth;
+  const settingsHeight = settings?.height || preview.videoHeight;
+  actualWidth = settingsWidth ? String(settingsWidth) : "";
+  actualHeight = settingsHeight ? String(settingsHeight) : "";
   if (captureMeta) {
     const resolution = actualWidth && actualHeight ? `${actualWidth}x${actualHeight}` : config.resolution;
     captureMeta.textContent = `${actualFrameRateText(config.frameRate)} - ${resolution}`;
