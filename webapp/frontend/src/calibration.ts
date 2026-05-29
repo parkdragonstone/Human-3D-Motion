@@ -49,6 +49,8 @@ interface CalibrationFramesResponse {
 interface CalibrationFrame {
   camera_label: string;
   image: string;
+  frame_index?: number;
+  corners?: ImagePoint[];
 }
 
 interface CalibrationVideo {
@@ -109,6 +111,15 @@ interface ImagePoint {
   v: number;
 }
 
+type ExtrinsicPointMode = "object" | "chessboard";
+
+interface PointHistoryEntry {
+  snapshots: Array<{
+    state: PointCanvasState;
+    points: ImagePoint[];
+  }>;
+}
+
 interface PointCanvasState {
   cameraLabel: string;
   canvas: HTMLCanvasElement;
@@ -137,6 +148,11 @@ const calibrationBoardType = document.querySelector<HTMLSelectElement>("[data-ca
 const calibrationTargetSelect = document.querySelector<HTMLSelectElement>("[data-calibration-target-select]");
 const intrinsicFields = document.querySelector<HTMLElement>("[data-intrinsic-fields]");
 const extrinsicFields = document.querySelector<HTMLElement>("[data-extrinsic-fields]");
+const extrinsicTargetInputs = Array.from(document.querySelectorAll<HTMLInputElement>("[data-extrinsic-target-option]"));
+const extrinsicObjectFields = Array.from(document.querySelectorAll<HTMLElement>("[data-extrinsic-object-fields]"));
+const extrinsicChessboardFields = Array.from(document.querySelectorAll<HTMLElement>("[data-extrinsic-chessboard-fields]"));
+const extrinsicBoardType = document.querySelector<HTMLSelectElement>("[data-extrinsic-calibration-board-type]");
+const extrinsicBoardFields = Array.from(document.querySelectorAll<HTMLElement>("[data-extrinsic-board-field]"));
 const boardFields = Array.from(document.querySelectorAll<HTMLElement>("[data-board-field]"));
 const calibrationActionButton = document.querySelector<HTMLButtonElement>("[data-calibration-action-button]");
 const calibrationActionLabel = document.querySelector<HTMLElement>("[data-calibration-action-label]");
@@ -159,10 +175,13 @@ let calibrationRecordingStartedAt = 0;
 let calibrationRecordingTimerId = 0;
 let extrinsicPointSession: {
   folderName: string;
+  mode: ExtrinsicPointMode;
+  boardType: string;
+  chessboardOrientation: string;
   objectPoints: ObjectPoint[];
   intrinsicCalibration: unknown;
   canvases: PointCanvasState[];
-  history: PointCanvasState[];
+  history: PointHistoryEntry[];
   status: HTMLElement;
 } | null = null;
 
@@ -514,6 +533,16 @@ async function fetchCalibrationFrames(folderName: string): Promise<CalibrationFr
   return fetchJson<CalibrationFramesResponse>(`/api/calibrations/${encodeURIComponent(folderName)}/frames`);
 }
 
+async function fetchChessboardCorners(
+  folderName: string,
+  payload: Record<string, unknown>,
+): Promise<CalibrationFramesResponse> {
+  return postJson<CalibrationFramesResponse>(
+    `/api/calibrations/${encodeURIComponent(folderName)}/chessboard-corners`,
+    payload,
+  );
+}
+
 async function refreshCameraSettings(): Promise<void> {
   const settings = await fetchJson<CameraSettings>("/api/settings/cameras");
   applyCaptureMode(settings.capture_mode);
@@ -611,6 +640,38 @@ function errorMessage(error: unknown): string {
   }
 }
 
+function currentExtrinsicTarget(): ExtrinsicPointMode {
+  return extrinsicTargetInputs.find((input) => input.checked)?.value === "chessboard" ? "chessboard" : "object";
+}
+
+function detailFormValue(data: FormData, name: string): FormDataEntryValue | null {
+  if (calibrationMode?.value === "extrinsic" && currentExtrinsicTarget() === "chessboard") {
+    const field = calibrationDetailForm?.querySelector<HTMLInputElement | HTMLSelectElement>(
+      `[data-extrinsic-chessboard-fields] [name='${name}']`,
+    );
+    if (field) return field.value;
+  }
+  return data.get(name);
+}
+
+function copyIntrinsicBoardFieldsToExtrinsic(): void {
+  [
+    "checker_board_type",
+    "aruco_dictionary",
+    "checker_board_size_mm",
+    "marker_size_mm",
+    "checker_board_columns",
+    "checker_board_rows",
+  ].forEach((name) => {
+    const source = intrinsicFields?.querySelector<HTMLInputElement | HTMLSelectElement>(`[name='${name}']`);
+    const target = calibrationDetailForm?.querySelector<HTMLInputElement | HTMLSelectElement>(
+      `[data-extrinsic-chessboard-fields] [name='${name}']`,
+    );
+    if (source && target) target.value = source.value;
+  });
+  syncExtrinsicBoardFields();
+}
+
 async function calibrationPayload(): Promise<Record<string, unknown> | null> {
   if (!calibrationSetupForm || !calibrationSetupForm.reportValidity()) return null;
   const data = new FormData(calibrationSetupForm);
@@ -632,14 +693,20 @@ async function calibrationDetailPayload(): Promise<Record<string, unknown> | nul
   const intrinsicCalibration = file instanceof File && file.size > 0
     ? JSON.parse(await file.text()) as unknown
     : null;
+  const extrinsicTarget = currentExtrinsicTarget();
+  const checkerBoardType = extrinsicTarget === "chessboard"
+    ? String(detailFormValue(detailData, "checker_board_type") || "chessboard")
+    : String(detailData.get("checker_board_type") || "chessboard");
   return {
     calibration_mode: String(detailData.get("calibration_mode") || "intrinsic"),
-    checker_board_type: String(detailData.get("checker_board_type") || "chessboard"),
-    aruco_dictionary: String(detailData.get("aruco_dictionary") || "DICT_4X4_50"),
-    checker_board_size_mm: Number(detailData.get("checker_board_size_mm") || 0),
-    marker_size_mm: Number(detailData.get("marker_size_mm") || 0),
-    checker_board_columns: Number(detailData.get("checker_board_columns") || 0),
-    checker_board_rows: Number(detailData.get("checker_board_rows") || 0),
+    extrinsic_calibration_target: extrinsicTarget,
+    checker_board_type: checkerBoardType,
+    aruco_dictionary: String(detailFormValue(detailData, "aruco_dictionary") || "DICT_4X4_50"),
+    checker_board_size_mm: Number(detailFormValue(detailData, "checker_board_size_mm") || 0),
+    marker_size_mm: Number(detailFormValue(detailData, "marker_size_mm") || 0),
+    checker_board_columns: Number(detailFormValue(detailData, "checker_board_columns") || 0),
+    checker_board_rows: Number(detailFormValue(detailData, "checker_board_rows") || 0),
+    chessboard_orientation: String(detailFormValue(detailData, "chessboard_orientation") || "horizontal"),
     object_points: String(detailData.get("object_points") || ""),
     intrinsic_calibration: intrinsicCalibration,
   };
@@ -680,9 +747,31 @@ function parseObjectPoints(value: string): ObjectPoint[] {
   return points;
 }
 
+function chessboardObjectPoints(columns: number, rows: number, squareSizeMm: number, orientation: string): ObjectPoint[] {
+  const squareSizeM = squareSizeMm / 1000;
+  const vertical = orientation === "vertical";
+  const points: ObjectPoint[] = [];
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      const id = points.length + 1;
+      points.push({
+        id,
+        x: vertical ? 0 : -column * squareSizeM,
+        y: row * squareSizeM,
+        z: vertical ? column * squareSizeM : 0,
+      });
+    }
+  }
+  return points;
+}
+
 async function openExtrinsicPointModal(folderName: string): Promise<void> {
   const detailPayload = await calibrationDetailPayload();
   if (!detailPayload) return;
+  if (detailPayload.extrinsic_calibration_target === "chessboard") {
+    await openExtrinsicChessboardModal(folderName, detailPayload);
+    return;
+  }
   const objectPoints = parseObjectPoints(String(detailPayload.object_points || ""));
   if (objectPoints.length < 6) {
     showCalibrationResultModal({ ok: false, mode: "EXTR", error: `need_at_least_6_object_points: ${objectPoints.length}` });
@@ -693,14 +782,70 @@ async function openExtrinsicPointModal(folderName: string): Promise<void> {
     return;
   }
   const frames = await fetchCalibrationFrames(folderName);
-  showExtrinsicPointModal(folderName, frames.frames, objectPoints, detailPayload.intrinsic_calibration);
+  showExtrinsicPointModal(folderName, frames.frames, objectPoints, detailPayload.intrinsic_calibration, "object", "", "");
 }
 
-function showExtrinsicPointModal(folderName: string, frames: CalibrationFrame[], objectPoints: ObjectPoint[], intrinsicCalibration: unknown): void {
+async function openExtrinsicChessboardModal(folderName: string, detailPayload: Record<string, unknown>): Promise<void> {
+  if (!detailPayload.intrinsic_calibration) {
+    showCalibrationResultModal({ ok: false, mode: "EXTR", error: "intrinsic_calibration_upload_required" });
+    return;
+  }
+  const columns = Number(detailPayload.checker_board_columns || 0);
+  const rows = Number(detailPayload.checker_board_rows || 0);
+  const squareSizeMm = Number(detailPayload.checker_board_size_mm || 0);
+  const boardType = String(detailPayload.checker_board_type || "chessboard");
+  const markerSizeMm = Number(detailPayload.marker_size_mm || 0);
+  if (columns < 2 || rows < 2 || squareSizeMm <= 0) {
+    showCalibrationResultModal({ ok: false, mode: "EXTR", error: "bad_chessboard_setup" });
+    return;
+  }
+  if (boardType === "charuco" && (markerSizeMm <= 0 || markerSizeMm >= squareSizeMm)) {
+    showCalibrationResultModal({ ok: false, mode: "EXTR", error: "bad_charuco_setup" });
+    return;
+  }
+
+  const orientation = String(detailPayload.chessboard_orientation || "horizontal");
+  const objectPoints = chessboardObjectPoints(columns, rows, squareSizeMm, orientation);
+  const response = await fetchChessboardCorners(folderName, {
+    checker_board_type: boardType,
+    aruco_dictionary: detailPayload.aruco_dictionary,
+    checker_board_columns: columns,
+    checker_board_rows: rows,
+    checker_board_size_mm: squareSizeMm,
+    marker_size_mm: markerSizeMm,
+  });
+  const frames = response.frames.map((frame) => ({
+    ...frame,
+    corners: (frame.corners || []).filter((corner) => objectPoints.some((point) => point.id === corner.id)).map((corner, index) => ({
+      id: boardType === "charuco" ? corner.id : objectPoints[index].id,
+      u: corner.u,
+      v: corner.v,
+    })),
+  }));
+  showExtrinsicPointModal(
+    folderName,
+    frames,
+    objectPoints,
+    detailPayload.intrinsic_calibration,
+    "chessboard",
+    boardType,
+    orientation,
+  );
+}
+
+function showExtrinsicPointModal(
+  folderName: string,
+  frames: CalibrationFrame[],
+  objectPoints: ObjectPoint[],
+  intrinsicCalibration: unknown,
+  mode: ExtrinsicPointMode,
+  boardType: string,
+  chessboardOrientation: string,
+): void {
   if (!calibrationModal || !calibrationModalTitle || !calibrationModalBody) return;
   extrinsicPointSession = null;
   calibrationModal.hidden = false;
-  calibrationModalTitle.textContent = "Extrinsic Point Selection";
+  calibrationModalTitle.textContent = mode === "chessboard" ? "Extrinsic Board Corners" : "Extrinsic Point Selection";
   if (calibrationModalSpinner) calibrationModalSpinner.hidden = true;
   if (calibrationModalClose) calibrationModalClose.hidden = false;
   calibrationModalBody.innerHTML = `
@@ -708,14 +853,15 @@ function showExtrinsicPointModal(folderName: string, frames: CalibrationFrame[],
       <strong data-extrinsic-point-status></strong>
       <div>
         <button class="button secondary" type="button" data-extrinsic-reset>Reset View</button>
-        <button class="button secondary" type="button" data-extrinsic-undo>Undo Point</button>
+        ${mode === "chessboard" ? `<button class="button secondary" type="button" data-extrinsic-swap>Swap First/Last</button>` : ""}
+        <button class="button secondary" type="button" data-extrinsic-undo>Undo</button>
         <button class="button record" type="button" data-extrinsic-submit>Calibration</button>
       </div>
     </div>
     <div class="extrinsic-point-grid">
       ${frames.slice(0, 4).map((frame, index) => `
         <div class="extrinsic-point-panel">
-          <strong>${frame.camera_label.toUpperCase()}</strong>
+          <strong>${frame.camera_label.toUpperCase()}${typeof frame.frame_index === "number" ? ` - frame ${frame.frame_index}` : ""}</strong>
           <canvas data-extrinsic-canvas="${index}" width="640" height="420"></canvas>
         </div>
       `).join("")}
@@ -724,7 +870,17 @@ function showExtrinsicPointModal(folderName: string, frames: CalibrationFrame[],
   const status = calibrationModalBody.querySelector<HTMLElement>("[data-extrinsic-point-status]");
   if (!status) return;
   const canvases: PointCanvasState[] = [];
-  extrinsicPointSession = { folderName, objectPoints, intrinsicCalibration, canvases, history: [], status };
+  extrinsicPointSession = {
+    folderName,
+    mode,
+    boardType,
+    chessboardOrientation,
+    objectPoints,
+    intrinsicCalibration,
+    canvases,
+    history: [],
+    status,
+  };
   frames.slice(0, 4).forEach((frame, index) => {
     const canvas = calibrationModalBody.querySelector<HTMLCanvasElement>(`[data-extrinsic-canvas="${index}"]`);
     const ctx = canvas?.getContext("2d");
@@ -735,7 +891,11 @@ function showExtrinsicPointModal(folderName: string, frames: CalibrationFrame[],
       canvas,
       ctx,
       image,
-      points: [],
+      points: (frame.corners || []).map((point, pointIndex) => ({
+        id: point.id ?? objectPoints[pointIndex]?.id,
+        u: point.u,
+        v: point.v,
+      })),
       scale: 1,
       offsetX: 0,
       offsetY: 0,
@@ -760,11 +920,9 @@ function showExtrinsicPointModal(folderName: string, frames: CalibrationFrame[],
     });
   });
   calibrationModalBody.querySelector<HTMLButtonElement>("[data-extrinsic-undo]")?.addEventListener("click", () => {
-    const target = extrinsicPointSession?.history.pop();
-    target?.points.pop();
-    if (target) drawPointCanvas(target);
-    updateExtrinsicPointStatus();
+    undoExtrinsicPointEdit();
   });
+  calibrationModalBody.querySelector<HTMLButtonElement>("[data-extrinsic-swap]")?.addEventListener("click", swapExtrinsicChessboardOrder);
   calibrationModalBody.querySelector<HTMLButtonElement>("[data-extrinsic-submit]")?.addEventListener("click", submitExtrinsicPointCalibration);
   updateExtrinsicPointStatus();
 }
@@ -774,6 +932,61 @@ function fitPointCanvas(state: PointCanvasState): void {
   state.scale = scale;
   state.offsetX = (state.canvas.width - state.image.width * scale) / 2;
   state.offsetY = (state.canvas.height - state.image.height * scale) / 2;
+}
+
+function cloneImagePoints(points: ImagePoint[]): ImagePoint[] {
+  return points.map((point) => ({ ...point }));
+}
+
+function pushExtrinsicPointHistory(states: PointCanvasState[]): void {
+  const session = extrinsicPointSession;
+  if (!session) return;
+  session.history.push({
+    snapshots: states.map((state) => ({
+      state,
+      points: cloneImagePoints(state.points),
+    })),
+  });
+}
+
+function undoExtrinsicPointEdit(): void {
+  const entry = extrinsicPointSession?.history.pop();
+  if (!entry) return;
+  entry.snapshots.forEach((snapshot) => {
+    snapshot.state.points = cloneImagePoints(snapshot.points);
+    drawPointCanvas(snapshot.state);
+  });
+  updateExtrinsicPointStatus();
+}
+
+function pointIdKey(id: string | number | undefined): string {
+  return String(id ?? "");
+}
+
+function nextMissingObjectPoint(
+  session: NonNullable<typeof extrinsicPointSession>,
+  state: PointCanvasState,
+): ObjectPoint | undefined {
+  const selected = new Set(state.points.map((point) => pointIdKey(point.id)));
+  return session.objectPoints.find((point) => !selected.has(pointIdKey(point.id)));
+}
+
+function swapExtrinsicChessboardOrder(): void {
+  const session = extrinsicPointSession;
+  if (!session || session.mode !== "chessboard") return;
+  const reversedPoints = [...session.objectPoints].reverse();
+  const swappedById = new Map(
+    session.objectPoints.map((point, index) => [pointIdKey(point.id), reversedPoints[index]?.id]),
+  );
+  pushExtrinsicPointHistory(session.canvases);
+  session.canvases.forEach((state) => {
+    state.points = cloneImagePoints(state.points).map((point) => ({
+      ...point,
+      id: swappedById.get(pointIdKey(point.id)) ?? point.id,
+    }));
+    drawPointCanvas(state);
+  });
+  updateExtrinsicPointStatus();
 }
 
 function bindPointCanvas(state: PointCanvasState): void {
@@ -817,15 +1030,47 @@ function bindPointCanvas(state: PointCanvasState): void {
     state.canvas.releasePointerCapture(event.pointerId);
     if (state.moved || event.button !== 0) return;
     const session = extrinsicPointSession;
-    if (!session || state.points.length >= session.objectPoints.length) return;
+    if (!session) return;
     const canvasPoint = eventCanvasPoint(state, event);
     const point = canvasToImagePoint(state, canvasPoint.x, canvasPoint.y);
     if (point.u < 0 || point.v < 0 || point.u > state.image.width || point.v > state.image.height) return;
-    state.points.push({ id: session.objectPoints[state.points.length].id, u: point.u, v: point.v });
-    session.history.push(state);
+    const nextPoint = session.mode === "chessboard"
+      ? nextMissingObjectPoint(session, state)
+      : session.objectPoints[state.points.length];
+    if (!nextPoint) {
+      if (session.mode !== "chessboard") return;
+      const targetIndex = nearestPointIndex(state, canvasPoint.x, canvasPoint.y);
+      if (targetIndex < 0) return;
+      pushExtrinsicPointHistory([state]);
+      state.points[targetIndex] = {
+        ...state.points[targetIndex],
+        u: point.u,
+        v: point.v,
+      };
+      drawPointCanvas(state);
+      updateExtrinsicPointStatus();
+      return;
+    }
+    pushExtrinsicPointHistory([state]);
+    state.points.push({ id: nextPoint.id, u: point.u, v: point.v });
     drawPointCanvas(state);
     updateExtrinsicPointStatus();
   });
+}
+
+function nearestPointIndex(state: PointCanvasState, x: number, y: number): number {
+  let nearest = -1;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  state.points.forEach((point, index) => {
+    const pointX = state.offsetX + point.u * state.scale;
+    const pointY = state.offsetY + point.v * state.scale;
+    const distance = (pointX - x) ** 2 + (pointY - y) ** 2;
+    if (distance < nearestDistance) {
+      nearest = index;
+      nearestDistance = distance;
+    }
+  });
+  return nearest;
 }
 
 function eventCanvasPoint(state: PointCanvasState, event: PointerEvent | WheelEvent): { x: number; y: number } {
@@ -848,28 +1093,48 @@ function drawPointCanvas(state: PointCanvasState): void {
   state.points.forEach((point, index) => {
     const x = state.offsetX + point.u * state.scale;
     const y = state.offsetY + point.v * state.scale;
+    const session = extrinsicPointSession;
+    const firstPointId = session?.mode === "chessboard" ? pointIdKey(session.objectPoints[0]?.id) : "";
+    const lastPointId = session?.mode === "chessboard" ? pointIdKey(session.objectPoints[session.objectPoints.length - 1]?.id) : "";
+    const pointId = pointIdKey(point.id);
+    const isFirst = session?.mode === "chessboard" ? pointId === firstPointId : index === 0;
+    const isLast = session?.mode === "chessboard" ? pointId === lastPointId : index === state.points.length - 1;
     state.ctx.beginPath();
-    state.ctx.arc(x, y, 5, 0, Math.PI * 2);
-    state.ctx.fillStyle = "#d7ff43";
+    state.ctx.arc(x, y, isFirst || isLast ? 6 : 5, 0, Math.PI * 2);
+    state.ctx.fillStyle = isFirst ? "#d7ff43" : isLast ? "#ffb347" : "#ffffff";
     state.ctx.fill();
     state.ctx.lineWidth = 2;
     state.ctx.strokeStyle = "#05080a";
     state.ctx.stroke();
     state.ctx.fillStyle = "#ffffff";
     state.ctx.font = "700 13px system-ui";
-    state.ctx.fillText(String(point.id || index), x + 8, y - 8);
+    state.ctx.fillText(String(point.id ?? index), x + 8, y - 8);
   });
 }
 
 function updateExtrinsicPointStatus(): void {
   const session = extrinsicPointSession;
   if (!session) return;
-  const counts = session.canvases.map((state) => state.points.length);
-  const next = Math.min(...counts);
-  const nextPoint = session.objectPoints[next];
   const cameraCounts = session.canvases
     .map((state) => `${state.cameraLabel.toUpperCase()} ${state.points.length}/${session.objectPoints.length}`)
     .join(", ");
+  if (session.mode === "chessboard") {
+    const missing = session.canvases
+      .map((state) => ({ state, point: nextMissingObjectPoint(session, state) }))
+      .filter((item): item is { state: PointCanvasState; point: ObjectPoint } => Boolean(item.point));
+    if (missing.length === 0) {
+      session.status.textContent = `Detected corners loaded. Click a corner to move it. ${cameraCounts}`;
+      return;
+    }
+    const missingDetails = missing
+      .map((item) => `${item.state.cameraLabel.toUpperCase()} next ${item.point.id}`)
+      .join(", ");
+    session.status.textContent = `Add missing board corners: ${missingDetails} - ${cameraCounts}`;
+    return;
+  }
+  const counts = session.canvases.map((state) => state.points.length);
+  const next = Math.min(...counts);
+  const nextPoint = session.objectPoints[next];
   session.status.textContent = nextPoint
     ? `Next point: ${nextPoint.id} (${nextPoint.x}, ${nextPoint.y}, ${nextPoint.z}) - ${cameraCounts}`
     : "All points selected";
@@ -878,7 +1143,10 @@ function updateExtrinsicPointStatus(): void {
 async function submitExtrinsicPointCalibration(): Promise<void> {
   const session = extrinsicPointSession;
   if (!session || session.canvases.length < 2) return;
-  if (session.canvases.some((state) => state.points.length < session.objectPoints.length)) {
+  const requiredPoints = session.objectPoints.length;
+  const hasMissingChessboardPoint = session.mode === "chessboard"
+    && session.canvases.some((state) => Boolean(nextMissingObjectPoint(session, state)));
+  if (hasMissingChessboardPoint || session.canvases.some((state) => state.points.length < requiredPoints)) {
     updateExtrinsicPointStatus();
     return;
   }
@@ -889,6 +1157,10 @@ async function submitExtrinsicPointCalibration(): Promise<void> {
   showCalibrationProcessingModal();
   const result = await runCalibration(session.folderName, {
     intrinsic_calibration: session.intrinsicCalibration,
+    extrinsic_calibration_target: session.mode,
+    checker_board_type: session.boardType || "chessboard",
+    chessboard_orientation: session.chessboardOrientation,
+    board_position: session.chessboardOrientation,
     object_points: session.objectPoints,
     image_points_by_camera: imagePointsByCamera,
     image_points_cam1: cam1?.points || [],
@@ -906,7 +1178,34 @@ function syncCalibrationMode(): void {
   const intrinsic = calibrationMode?.value !== "extrinsic";
   if (intrinsicFields) intrinsicFields.hidden = !intrinsic;
   if (extrinsicFields) extrinsicFields.hidden = intrinsic;
+  syncExtrinsicTarget();
   syncBoardFields();
+}
+
+function syncExtrinsicTarget(): void {
+  const target = currentExtrinsicTarget();
+  if (target === "chessboard") {
+    copyIntrinsicBoardFieldsToExtrinsic();
+  }
+  extrinsicTargetInputs.forEach((input) => {
+    input.closest("label")?.classList.toggle("is-active", input.value === target);
+  });
+  extrinsicObjectFields.forEach((field) => {
+    field.hidden = target !== "object";
+  });
+  extrinsicChessboardFields.forEach((field) => {
+    field.hidden = target !== "chessboard";
+  });
+  syncExtrinsicBoardFields();
+}
+
+function syncExtrinsicBoardFields(): void {
+  const target = currentExtrinsicTarget();
+  const boardType = extrinsicBoardType?.value || "chessboard";
+  extrinsicBoardFields.forEach((field) => {
+    const allowedTypes = String(field.dataset.extrinsicBoardField || "").split(/\s+/).filter(Boolean);
+    field.hidden = target !== "chessboard" || !allowedTypes.includes(boardType);
+  });
 }
 
 function syncBoardFields(): void {
@@ -947,6 +1246,10 @@ cameraSettingsForm?.addEventListener("submit", async (event) => {
 
 calibrationMode?.addEventListener("change", syncCalibrationMode);
 calibrationBoardType?.addEventListener("change", syncBoardFields);
+extrinsicBoardType?.addEventListener("change", syncExtrinsicBoardFields);
+extrinsicTargetInputs.forEach((input) => {
+  input.addEventListener("change", syncExtrinsicTarget);
+});
 
 calibrationActionButton?.addEventListener("click", async () => {
   calibrationActionButton.disabled = true;

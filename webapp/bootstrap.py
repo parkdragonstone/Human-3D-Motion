@@ -18,6 +18,7 @@ from webapp.application import (
     StorageRootService,
 )
 from webapp.infrastructure.analysis import (
+    OpenCvCalibrationBoardCornerDetector,
     OpenCvVideoFrameEncoder,
     OpenCvVideoMetadataReader,
     PipelineAnalysisConfigProvider,
@@ -70,7 +71,12 @@ def create_app_services() -> AppServices:
         analysis_job_service,
         analysis_result_service,
     )
-    calibration_service = CalibrationService(settings, PipelineCalibrationRunner(), video_frame_encoder)
+    calibration_service = CalibrationService(
+        settings,
+        PipelineCalibrationRunner(),
+        video_frame_encoder,
+        OpenCvCalibrationBoardCornerDetector(),
+    )
     calibration_recording_service = CalibrationRecordingService(
         capture_service,
         calibration_service,

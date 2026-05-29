@@ -7,7 +7,12 @@ from datetime import datetime
 from pathlib import Path
 
 from webapp.domain.entities import SubjectInfo
-from webapp.domain.ports import CalibrationRunner, SettingsRepository, VideoFrameEncoder
+from webapp.domain.ports import (
+    CalibrationBoardCornerDetector,
+    CalibrationRunner,
+    SettingsRepository,
+    VideoFrameEncoder,
+)
 
 
 @dataclass
@@ -43,10 +48,12 @@ class CalibrationService:
         settings: SettingsRepository,
         calibration_runner: CalibrationRunner,
         video_frame_encoder: VideoFrameEncoder,
+        calibration_board_corner_detector: CalibrationBoardCornerDetector,
     ) -> None:
         self._settings = settings
         self._calibration_runner = calibration_runner
         self._video_frame_encoder = video_frame_encoder
+        self._calibration_board_corner_detector = calibration_board_corner_detector
         self._active: ActiveCalibration | None = None
 
     def start(
@@ -160,6 +167,43 @@ class CalibrationService:
         if len(frames) < 2:
             raise ValueError(f"need_at_least_2_extrinsic_videos: {len(frames)}")
         return {"folder_name": folder_name, "frames": frames}
+
+    def chessboard_corners(self, folder_name: str, metadata: dict) -> dict:
+        record = self._record_by_folder(folder_name)
+        if record.mode != "EXTR":
+            raise ValueError("extrinsic_calibration_required")
+        board_columns = int(metadata.get("checker_board_columns") or 0)
+        board_rows = int(metadata.get("checker_board_rows") or 0)
+        if board_columns < 2 or board_rows < 2:
+            raise ValueError("bad_chessboard_size")
+        if len(record.videos) < 2:
+            raise ValueError(f"need_at_least_2_extrinsic_videos: {len(record.videos)}")
+        config = {
+            "checker_board_type": str(metadata.get("checker_board_type") or "chessboard"),
+            "checker_board_columns": board_columns,
+            "checker_board_rows": board_rows,
+            "checker_board_size_mm": float(metadata.get("checker_board_size_mm") or 0),
+            "marker_size_mm": float(metadata.get("marker_size_mm") or 0),
+            "aruco_dictionary": str(metadata.get("aruco_dictionary") or "DICT_4X4_50"),
+        }
+
+        frames = []
+        for video in record.videos[:4]:
+            detected = self._calibration_board_corner_detector.detect_first_match(
+                str(video.path),
+                config,
+            )
+            frames.append({
+                "camera_label": video.camera_label,
+                **detected,
+            })
+        return {
+            "folder_name": folder_name,
+            "checker_board_type": config["checker_board_type"],
+            "checker_board_columns": board_columns,
+            "checker_board_rows": board_rows,
+            "frames": frames,
+        }
 
     def _record_by_folder(self, folder_name: str) -> CalibrationRecord:
         record = next((item for item in self.list_calibrations() if item.folder_name == folder_name), None)

@@ -1,5 +1,6 @@
 """Infrastructure adapters for analysis pipelines."""
 
+from webapp.infrastructure.analysis.opencv_calibration_board_corner_detector import OpenCvCalibrationBoardCornerDetector
 from webapp.infrastructure.analysis.opencv_video_frame_encoder import OpenCvVideoFrameEncoder
 from webapp.infrastructure.analysis.opencv_video_metadata_reader import OpenCvVideoMetadataReader
 from webapp.infrastructure.analysis.pipeline_analysis_config_provider import PipelineAnalysisConfigProvider
@@ -8,6 +9,7 @@ from webapp.infrastructure.analysis.pipeline_analysis_runner import PipelineAnal
 from webapp.infrastructure.analysis.pipeline_calibration_runner import PipelineCalibrationRunner
 
 __all__ = [
+    "OpenCvCalibrationBoardCornerDetector",
     "OpenCvVideoFrameEncoder",
     "OpenCvVideoMetadataReader",
     "PipelineAnalysisConfigProvider",

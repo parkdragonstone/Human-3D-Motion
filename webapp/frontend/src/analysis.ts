@@ -152,6 +152,7 @@ let sessions: CaptureSession[] = [];
 let config: Record<string, unknown> = {};
 let videosPlaying = false;
 let seeking = false;
+let calibrationUploadPending: Promise<boolean> | null = null;
 let keypointEditEnabled = false;
 let keypointActiveVideoIndex = 0;
 let keypointFrameData: KeypointFrame | null = null;
@@ -2100,6 +2101,13 @@ async function runAnalysis(): Promise<void> {
   const analysisConfig = readConfigForm();
   logAnalysisConfig(analysisConfig);
   try {
+    if (calibrationUploadPending) {
+      await calibrationUploadPending;
+    }
+    if (!(await uploadSelectedCalibrationFile(false))) {
+      runButton.disabled = false;
+      return;
+    }
     const job = await postJson<AnalysisJob>("/api/analysis/run", {
       session_path: session.session_path,
       config: analysisConfig,
@@ -2111,16 +2119,16 @@ async function runAnalysis(): Promise<void> {
   }
 }
 
-async function uploadCalibrationFile(): Promise<void> {
+async function uploadSelectedCalibrationFile(logMissingSession: boolean): Promise<boolean> {
   const session = selectedSession();
   const file = calibrationFile?.files?.[0];
   if (calibrationFileName) calibrationFileName.textContent = file?.name || "No file selected";
-  if (!session) {
-    log("Select a session before choosing a calibration file.");
-    return;
-  }
   if (!file) {
-    return;
+    return true;
+  }
+  if (!session) {
+    if (logMissingSession) log("Select a session before choosing a calibration file.");
+    return false;
   }
   const formData = new FormData();
   formData.set("session_path", session.session_path);
@@ -2133,14 +2141,25 @@ async function uploadCalibrationFile(): Promise<void> {
     });
     if (!response.ok) throw new Error(await response.text());
     await response.json() as CalibrationUploadResult;
+    return true;
   } catch (error) {
     log(error instanceof Error ? error.message : "Calibration upload failed.");
+    return false;
   }
+}
+
+function uploadCalibrationFile(logMissingSession = true): Promise<boolean> {
+  calibrationUploadPending = uploadSelectedCalibrationFile(logMissingSession);
+  calibrationUploadPending.finally(() => {
+    calibrationUploadPending = null;
+  });
+  return calibrationUploadPending;
 }
 
 function clearCalibrationFile(): void {
   if (calibrationFile) calibrationFile.value = "";
   if (calibrationFileName) calibrationFileName.textContent = "No file selected";
+  calibrationUploadPending = null;
 }
 
 async function pollJob(jobId: string): Promise<void> {
@@ -2184,11 +2203,14 @@ sessionSelect?.addEventListener("change", () => {
   renderVideos();
   renderConfigForm();
   loadAnalysisResults().catch(() => undefined);
+  uploadCalibrationFile(false).catch(() => undefined);
 });
 configForm?.addEventListener("input", handleConfigFormInput);
 configForm?.addEventListener("click", handleConfigFormClick);
 calibrationForm?.addEventListener("submit", (event) => event.preventDefault());
-calibrationFile?.addEventListener("change", uploadCalibrationFile);
+calibrationFile?.addEventListener("change", () => {
+  uploadCalibrationFile(true).catch(() => undefined);
+});
 clearCalibrationButton?.addEventListener("click", clearCalibrationFile);
 pose3dFileSelect?.addEventListener("change", () => loadSelectedPose3DFile().catch(() => undefined));
 pose3dPlayButton?.addEventListener("click", togglePose3DPlayback);

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Callable, Protocol
+from typing import Any, Callable, Protocol
 
 from webapp.domain.entities import CameraStatus, CaptureSession, CaptureVideo, SubjectInfo
 
@@ -107,6 +107,11 @@ class VideoMetadataReader(Protocol):
 
 class VideoFrameEncoder(Protocol):
     def first_frame_data_url(self, path: str) -> str:
+        ...
+
+
+class CalibrationBoardCornerDetector(Protocol):
+    def detect_first_match(self, path: str, config: dict[str, Any]) -> dict[str, Any]:
         ...
 
 

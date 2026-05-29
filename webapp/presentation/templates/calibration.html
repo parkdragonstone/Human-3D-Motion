@@ -209,9 +209,57 @@
         </label>
       </div>
       <div class="calibration-grid" data-extrinsic-fields hidden>
-        <label>
+        <div class="mode-picker calibration-target-picker" data-extrinsic-target-picker>
+          <label class="is-active">
+            <input type="radio" name="extrinsic_calibration_target" value="object" checked data-extrinsic-target-option>
+            <span>Object</span>
+          </label>
+          <label>
+            <input type="radio" name="extrinsic_calibration_target" value="chessboard" data-extrinsic-target-option>
+            <span>Chessboard</span>
+          </label>
+        </div>
+        <label data-extrinsic-object-fields>
           Object Points m
           <textarea name="object_points" rows="6" placeholder="point_name,x,y,z"></textarea>
+        </label>
+        <label data-extrinsic-chessboard-fields hidden>
+          Calibration Board Type
+          <select name="checker_board_type" data-extrinsic-calibration-board-type>
+            <option value="chessboard" selected>Chessboard</option>
+            <option value="charuco">CharucoBoard</option>
+          </select>
+        </label>
+        <label data-extrinsic-chessboard-fields data-extrinsic-board-field="charuco" hidden>
+          ArUco Dictionary
+          <select name="aruco_dictionary">
+            <option value="DICT_4X4_50" selected>DICT_4X4_50</option>
+            <option value="DICT_5X5_100">DICT_5X5_100</option>
+            <option value="DICT_6X6_250">DICT_6X6_250</option>
+          </select>
+        </label>
+        <label data-extrinsic-chessboard-fields hidden>
+          Square Size mm
+          <input name="checker_board_size_mm" type="number" min="1" value="25">
+        </label>
+        <label data-extrinsic-chessboard-fields data-extrinsic-board-field="charuco" hidden>
+          Marker Size mm
+          <input name="marker_size_mm" type="number" min="1" value="18">
+        </label>
+        <label data-extrinsic-chessboard-fields hidden>
+          Column
+          <input name="checker_board_columns" type="number" min="2" value="9">
+        </label>
+        <label data-extrinsic-chessboard-fields hidden>
+          Row
+          <input name="checker_board_rows" type="number" min="2" value="6">
+        </label>
+        <label data-extrinsic-chessboard-fields hidden>
+          Chessboard Direction
+          <select name="chessboard_orientation" data-chessboard-orientation>
+            <option value="horizontal" selected>Horizontal</option>
+            <option value="vertical">Vertical</option>
+          </select>
         </label>
         <label class="intrinsic-upload-field">
           Intrinsic Calibration Upload

@@ -394,6 +394,8 @@ def run_extrinsic_calibration_folder(
             "camera_labels": camera_labels,
             "videos": [video.name for video in calibration_videos],
             "object_points": object_points,
+            "checker_board_type": metadata.get("checker_board_type"),
+            "board_position": metadata.get("board_position") or metadata.get("chessboard_orientation"),
             "image_points_by_camera": image_points_by_camera,
             "intrinsic_calibration": intrinsic_bundle,
             "extrinsic": extrinsic,
@@ -741,6 +743,12 @@ def _scene_point_map(points, keys):
     return out
 
 
+def _is_axis_aligned_coplanar(objp3: np.ndarray) -> bool:
+    axis_ranges = np.ptp(objp3, axis=0)
+    obj_scale = max(float(np.max(axis_ranges)), 1e-12)
+    return float(np.min(axis_ranges)) <= max(1e-6, 1e-3 * obj_scale)
+
+
 def _solve_scene_pnp(cv2, objp3, img2d, K, D):
     for flag in (cv2.SOLVEPNP_ITERATIVE, cv2.SOLVEPNP_EPNP):
         try:
@@ -766,9 +774,7 @@ def _solve_scene_pnp(cv2, objp3, img2d, K, D):
     except Exception:
         pass
     try:
-        z_range = float(np.ptp(objp3[:, 2]))
-        obj_scale = max(float(np.max(np.ptp(objp3, axis=0))), 1e-12)
-        if z_range <= max(1e-6, 1e-3 * obj_scale) and hasattr(cv2, "SOLVEPNP_IPPE"):
+        if _is_axis_aligned_coplanar(objp3) and hasattr(cv2, "SOLVEPNP_IPPE"):
             ok, rvec, tvec = cv2.solvePnP(objp3, img2d, K, D, flags=cv2.SOLVEPNP_IPPE)
             if ok:
                 return ok, rvec, tvec, None
@@ -816,7 +822,6 @@ def calibrate_extrinsic_scene_from_points_multi(
 
     obj = _scene_point_map(object_points, ("x", "y", "z"))
     cameras: dict[str, dict[str, Any]] = {}
-    transforms: dict[str, np.ndarray] = {}
     errors: dict[str, str] = {}
 
     for label, intrinsic in intrinsics_by_label.items():
@@ -852,7 +857,6 @@ def calibrate_extrinsic_scene_from_points_multi(
             "reproj_rms_cm": rms_cm,
             "point_ids": common,
         }
-        transforms[label] = _rvec_tvec_to_T(cv2, rvec, tvec)
 
     if len(cameras) < 2:
         return {
@@ -929,101 +933,16 @@ def calibrate_extrinsic_scene_from_points(
     ip1 = np.asarray([img1[i] for i in common], dtype=np.float64).reshape(-1, 2)
     ip2 = np.asarray([img2[i] for i in common], dtype=np.float64).reshape(-1, 2)
 
-    # Use RANSAC for robustness
-    def _solve_with_fallback(objp3, img2d, K, D):
-        # 1) RANSAC ITERATIVE
-        try:
-            ok, rvec, tvec, inl = cv2.solvePnPRansac(
-                objp3, img2d, K, D, flags=cv2.SOLVEPNP_ITERATIVE,
-                reprojectionError=6.0, confidence=0.999, iterationsCount=200
-            )
-            if ok:
-                return ok, rvec, tvec, inl
-        except Exception:
-            pass
-        # 2) RANSAC EPNP
-        try:
-            ok, rvec, tvec, inl = cv2.solvePnPRansac(
-                objp3, img2d, K, D, flags=cv2.SOLVEPNP_EPNP,
-                reprojectionError=6.0, confidence=0.999, iterationsCount=200
-            )
-            if ok:
-                return ok, rvec, tvec, inl
-        except Exception:
-            pass
-        # 3) Non-RANSAC AP3P (general fallback; works well when ITERATIVE/RANSAC are unstable)
-        try:
-            if hasattr(cv2, "SOLVEPNP_AP3P"):
-                ok, rvec, tvec = cv2.solvePnP(objp3, img2d, K, D, flags=cv2.SOLVEPNP_AP3P)
-                if ok:
-                    return ok, rvec, tvec, None
-        except Exception:
-            pass
-
-        # 4) Non-RANSAC IPPE for coplanar
-        try:
-            # Relative coplanar check (object point units may be meters / mm depending on input).
-            z_range = float(np.ptp(objp3[:, 2]))  # max-min
-            obj_scale = float(np.max(np.ptp(objp3, axis=0)))
-            obj_scale = max(obj_scale, 1e-12)
-            # Consider coplanar if z variation is extremely small compared to overall object scale.
-            # (tuned to be forgiving: ~1e-3 relative)
-            coplanar = z_range <= max(1e-6, 1e-3 * obj_scale)
-
-            if coplanar and hasattr(cv2, "SOLVEPNP_IPPE"):
-                ok, rvec, tvec = cv2.solvePnP(objp3, img2d, K, D, flags=cv2.SOLVEPNP_IPPE)
-                inl = None
-                if ok:
-                    return ok, rvec, tvec, inl
-        except Exception:
-            pass
-        return False, None, None, None
-
-    ok1, rvec1, tvec1, inliers1 = _solve_with_fallback(objp, ip1, K1, D1)
-    ok2, rvec2, tvec2, inliers2 = _solve_with_fallback(objp, ip2, K2, D2)
+    ok1, rvec1, tvec1, inliers1 = _solve_scene_pnp(cv2, objp, ip1, K1, D1)
+    ok2, rvec2, tvec2, inliers2 = _solve_scene_pnp(cv2, objp, ip2, K2, D2)
 
     if not ok1 or not ok2:
         return {"ok": False, "error": "solvepnp_not_ok", "matched_points": int(len(common)), "common_ids": common}
 
-    # Reprojection error (inlier-aware)
-    def _reproj_rms(K, D, rvec, tvec, objp3, imgp2, inliers):
-        proj, _ = cv2.projectPoints(objp3, rvec, tvec, K, D)
-        proj = proj.reshape(-1, 2)
-        diff = proj - imgp2
-        if inliers is not None and len(inliers) > 0:
-            idx = inliers.reshape(-1).astype(int)
-            diff = diff[idx]
-        err = np.sqrt(np.mean(np.sum(diff * diff, axis=1)))
-        return float(err)
-
-    def _reproj_rms_cm(K, D, rvec, tvec, objp3, imgp2, inliers):
-        """
-        픽셀 오차를 간단한 1차 근사로 mm→cm로 변환:
-          dX_mm ≈ Z / fx * du,  dY_mm ≈ Z / fy * dv
-        (Z는 각 포인트의 카메라 좌표계 깊이, fx/fy는 K)
-        """
-        fx = float(K[0, 0]); fy = float(K[1, 1])
-        R, _ = cv2.Rodrigues(rvec)
-        t = np.asarray(tvec, dtype=np.float64).reshape(3, 1)
-        Xc = (R @ objp3.T + t).T  # Nx3, object-point units
-        Z = np.maximum(1e-6, Xc[:, 2])
-        proj, _ = cv2.projectPoints(objp3, rvec, tvec, K, D)
-        proj = proj.reshape(-1, 2)
-        diff = proj - imgp2  # px
-        if inliers is not None and len(inliers) > 0:
-            idx = inliers.reshape(-1).astype(int)
-            diff = diff[idx]; Z = Z[idx]
-        # Object points are entered in meters in the UI. Convert meters to centimeters.
-        dx_m = (Z / fx) * diff[:, 0]
-        dy_m = (Z / fy) * diff[:, 1]
-        d_m = np.sqrt(dx_m * dx_m + dy_m * dy_m)
-        rms_m = float(np.sqrt(np.mean(d_m * d_m))) if d_m.size else 0.0
-        return rms_m * 100.0
-
-    rms1 = _reproj_rms(K1, D1, rvec1, tvec1, objp, ip1, inliers1)
-    rms2 = _reproj_rms(K2, D2, rvec2, tvec2, objp, ip2, inliers2)
-    rms1_cm = _reproj_rms_cm(K1, D1, rvec1, tvec1, objp, ip1, inliers1)
-    rms2_cm = _reproj_rms_cm(K2, D2, rvec2, tvec2, objp, ip2, inliers2)
+    rms1 = _scene_reproj_rms(cv2, K1, D1, rvec1, tvec1, objp, ip1, inliers1)
+    rms2 = _scene_reproj_rms(cv2, K2, D2, rvec2, tvec2, objp, ip2, inliers2)
+    rms1_cm = _scene_reproj_rms_cm(cv2, K1, D1, rvec1, tvec1, objp, ip1, inliers1)
+    rms2_cm = _scene_reproj_rms_cm(cv2, K2, D2, rvec2, tvec2, objp, ip2, inliers2)
 
     return {
         "ok": True,

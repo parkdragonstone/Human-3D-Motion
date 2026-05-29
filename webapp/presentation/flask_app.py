@@ -539,6 +539,14 @@ def create_app():
         except Exception as exc:
             return jsonify({"error": str(exc)}), 400
 
+    @app.post("/api/calibrations/<folder_name>/chessboard-corners")
+    def api_calibration_chessboard_corners(folder_name):
+        data = request.get_json(silent=True) or {}
+        try:
+            return jsonify(calibration_service.chessboard_corners(folder_name, data))
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 400
+
     @app.get("/phone-capture/<session_token>/<camera_label>")
     def phone_capture_page(session_token, camera_label):
         return render_template(

@@ -1,13 +1,31 @@
 ﻿.extrinsic-point-toolbar [data-extrinsic-submit] {
+  border-radius: 999px;
   background: var(--acid);
   color: var(--charcoal);
 }
 
 
+.calibration-target-picker,
+[data-extrinsic-object-fields],
+.intrinsic-upload-field {
+  grid-column: 1 / -1;
+}
+
+[data-extrinsic-object-fields] textarea {
+  width: 100%;
+  min-height: 150px;
+  resize: vertical;
+}
+
+.calibration-setup-form [hidden],
+.calibration-grid[hidden] {
+  display: none !important;
+}
+
 .calibration-modal {
   position: fixed;
   inset: 0;
-  z-index: 20;
+  z-index: 40;
   display: grid;
   place-items: center;
   padding: 24px;
