@@ -13,8 +13,6 @@ H3DM is a local web app for capture, calibration, pose estimation, 3D reconstruc
 - Python 3.12, installed through the Conda environment files below
 - Optional NVIDIA GPU support for pose estimation
 
-OpenSim Python API is installed with pip as `opensim>=4.6`. A separate OpenSim GUI installer is not required for this app's kinematics pipeline.
-
 ## Install
 
 Choose one environment.
@@ -38,12 +36,6 @@ CPU:
 ```bash
 conda env create -f environment-cpu.yml
 conda activate human-3d-motion
-```
-
-The GPU setup script installs the `h3dm` command automatically. For an existing
-or CPU-created environment, install the command manually:
-
-```bat
 scripts\install_h3dm_command.cmd
 ```
 
@@ -79,7 +71,7 @@ To create a GPU Windows executable from CMD, place the model files at
 build_exe_gpu.cmd
 ```
 
-The build command creates or reuses the dedicated `human-3d-motion-exe` Conda
+The build command creates or reuses the dedicated `human-3d-motion` Conda
 environment, normalizes ONNX Runtime to `onnxruntime-gpu`, verifies CUDA pose
 backend selection, installs frontend/build dependencies, builds TypeScript, and
 generates the executable icon from `images/human-3d-motion.png`.
@@ -91,7 +83,7 @@ build_exe_cpu.cmd
 ```
 
 The CPU build command creates or reuses the dedicated
-`human-3d-motion-exe-cpu` Conda environment and verifies OpenVINO CPU pose
+`human-3d-motion` Conda environment and verifies OpenVINO CPU pose
 backend selection. Both build commands create:
 
 ```text
@@ -195,23 +187,3 @@ name_height_weight_hand_YYYYMMDD_HHMMSS_cam02.mp4
 5. Select a session and run analysis.
 
 Analysis keeps its own root path separate from Capture/Calibration storage root.
-
-## Useful Commands
-
-Rebuild frontend after TypeScript changes:
-
-```bash
-npm run build:ts
-```
-
-Check Python syntax for the web app:
-
-```bash
-python -m py_compile webapp\presentation\flask_app.py
-```
-
-Install only Python packages into an existing environment:
-
-```bash
-pip install -r requirements.txt
-```
