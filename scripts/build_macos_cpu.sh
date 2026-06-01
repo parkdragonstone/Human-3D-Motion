@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-ENVIRONMENT_NAME="human-3d-motion-app-cpu"
+ENVIRONMENT_NAME="human-3d-motion"
 
 has_conda_environment() {
   conda env list | awk '{ print $1 }' | grep -Fxq "$ENVIRONMENT_NAME"
