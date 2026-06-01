@@ -33,6 +33,9 @@ try {
     Assert-LastCommandSucceeded "Verifying ONNX Runtime CUDA provider"
     conda run -n $environmentName python -c "from pipelines.poseEstimation import setup_backend_device; resolved = setup_backend_device('auto', 'auto'); assert resolved == ('onnxruntime', 'cuda'), resolved; print('Pose backend/device:', resolved)"
     Assert-LastCommandSucceeded "Verifying pose backend auto-detection"
+
+    & (Join-Path $PSScriptRoot "install_h3dm_command.ps1") -EnvironmentName $environmentName
+    Assert-LastCommandSucceeded "Installing h3dm command"
 } finally {
     Pop-Location
 }

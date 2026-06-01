@@ -1,6 +1,8 @@
 # Human3DMotion (H3DM)
 
-<img src="images/human-3d-motion.png" alt="Human 3D Motion" width="480">
+<p align="center">
+  <img src="images/human-3d-motion.png" alt="Human 3D Motion" width="480">
+</p>
 
 H3DM is a local web app for capture, calibration, pose estimation, 3D reconstruction, and kinematics analysis.
 
@@ -36,6 +38,13 @@ CPU:
 ```bash
 conda env create -f environment-cpu.yml
 conda activate human-3d-motion
+```
+
+The GPU setup script installs the `h3dm` command automatically. For an existing
+or CPU-created environment, install the command manually:
+
+```bat
+scripts\install_h3dm_command.cmd
 ```
 
 Install frontend dependencies and build TypeScript:
@@ -114,39 +123,49 @@ command.
 
 ## Run
 
-Start the web app:
+Start the web app from the repository root:
 
-```bash
-python -m webapp.main
+```bat
+h3dm
 ```
 
-Default URL:
+Default URL format:
 
 ```text
-https://127.0.0.1:9090
+https://<internal-ip>:9090
 ```
 
 The app uses a self-signed development HTTPS certificate by default. If the
-browser shows a certificate warning, continue to the site for local use.
+browser shows a certificate warning, continue to the site for local use. The
+`h3dm` command opens the internal IP URL in your default browser. Set
+`HUMAN_3D_MOTION_BROWSER_HOST` or `HUMAN_3D_MOTION_PUBLIC_URL` to override the
+opened address.
 
 To run without HTTPS:
 
-```bash
+```bat
 set HUMAN_3D_MOTION_HTTPS=0
-python -m webapp.main
+h3dm
 ```
 
 Then open:
 
 ```text
-http://127.0.0.1:9090
+http://<internal-ip>:9090
 ```
 
 To use another port:
 
-```bash
+```bat
 set HUMAN_3D_MOTION_PORT=5001
-python -m webapp.main
+h3dm
+```
+
+To keep the browser closed on launch:
+
+```bat
+set HUMAN_3D_MOTION_OPEN_BROWSER=0
+h3dm
 ```
 
 ## Demo Data

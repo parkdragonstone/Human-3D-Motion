@@ -1,7 +1,7 @@
 {
   "scripts": {
     "build:ts": "tsc -p webapp/frontend/tsconfig.json",
-    "dev:web": "python -m webapp.main"
+    "dev:web": "h3dm"
   },
   "devDependencies": {
     "typescript": "^5.9.3"
