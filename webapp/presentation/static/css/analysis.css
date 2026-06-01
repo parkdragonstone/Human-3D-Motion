@@ -8,6 +8,16 @@
   gap: 12px;
 }
 
+.analysis-settings-title {
+  justify-content: space-between;
+}
+
+.analysis-settings-title > div {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 
 .app-shell:has(.analysis-page) {
   margin-right: 390px;
@@ -384,7 +394,16 @@ textarea[name="object_points"]::-webkit-scrollbar-thumb:hover {
   right: 8px;
   height: 4px;
   border-radius: 999px;
-  background: linear-gradient(90deg, #ff4d24, #28b9ff);
+  background:
+    linear-gradient(
+      90deg,
+      rgba(246, 244, 233, 0.22) 0%,
+      rgba(246, 244, 233, 0.22) var(--frame-range-start, 0%),
+      #ff4d24 var(--frame-range-start, 0%),
+      #28b9ff var(--frame-range-end, 100%),
+      rgba(246, 244, 233, 0.22) var(--frame-range-end, 100%),
+      rgba(246, 244, 233, 0.22) 100%
+    );
 }
 
 .frame-range-slider input[type="range"] {

@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$environmentName = "baseball-motion-exe-cpu"
+$environmentName = "human-3d-motion-exe"
 
 function Assert-LastCommandSucceeded {
     param([string]$Step)
@@ -49,10 +49,10 @@ try {
 
     conda run -n $environmentName python -m pip install "pyinstaller>=6.0"
     Assert-LastCommandSucceeded "Installing PyInstaller"
-    conda run -n $environmentName python -m PyInstaller --noconfirm --clean packaging\BaseballMotion.spec
-    Assert-LastCommandSucceeded "Building BaseballMotion executable"
+    conda run -n $environmentName python -m PyInstaller --noconfirm --clean packaging\Human3DMotion.spec
+    Assert-LastCommandSucceeded "Building 3DHumanMotion executable"
 
-    Write-Host "Executable build complete: $repoRoot\dist\BaseballMotion\BaseballMotion.exe"
+    Write-Host "Executable build complete: $repoRoot\dist\Human3DMotion\Human3DMotion.exe"
 } finally {
     Pop-Location
 }

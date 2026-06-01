@@ -113,6 +113,7 @@ const sessionSelect = document.querySelector<HTMLSelectElement>("[data-analysis-
 const videoGrid = document.querySelector<HTMLElement>("[data-analysis-video-grid]");
 const configForm = document.querySelector<HTMLFormElement>("[data-analysis-config-form]");
 const runButton = document.querySelector<HTMLButtonElement>("[data-run-analysis]");
+const resetConfigButton = document.querySelector<HTMLButtonElement>("[data-reset-analysis-config]");
 const logPanel = document.querySelector<HTMLElement>("[data-analysis-log]");
 const overlayToggle = document.querySelector<HTMLInputElement>("[data-overlay-toggle]");
 const togglePlayButton = document.querySelector<HTMLButtonElement>("[data-toggle-play-videos]");
@@ -147,6 +148,7 @@ const kinematicsGrid = document.querySelector<HTMLElement>("[data-kinematics-gri
 const kinematicsChart = document.querySelector<HTMLCanvasElement>("[data-kinematics-chart]");
 const kinematicsChartTitle = document.querySelector<HTMLElement>("[data-kinematics-chart-title]");
 const clearKinematicsSelectionButton = document.querySelector<HTMLButtonElement>("[data-clear-kinematics-selection]");
+const analysisConfigStorageKey = "human3dMotion.analysis.config";
 
 let sessions: CaptureSession[] = [];
 let config: Record<string, unknown> = {};
@@ -248,7 +250,7 @@ const kinematicsConfigGroups = [
 ];
 
 const selectConfigOptions: Record<string, string[]> = {
-  "base.motion": ["Pitching", "Hitting"],
+  "base.motion": ["Baseball-Pitching", "Baseball-Hitting", "Walking"],
   "lifting.interpolation": ["linear", "slinear", "quadratic", "cubic", "none"],
   "lifting.sections_to_keep": ["all", "largest", "first", "last"],
   "lifting.fill_large_gaps_with": ["last_value", "nan", "zeros"],
@@ -293,11 +295,19 @@ function selectedSession(): CaptureSession | null {
 
 async function loadConfig(): Promise<void> {
   config = await fetchJson<Record<string, unknown>>("/api/analysis/config");
+  config = mergeConfig(config, loadStoredAnalysisConfig());
+  renderConfigForm();
+}
+
+async function resetConfigToDefault(): Promise<void> {
+  clearStoredAnalysisConfig();
+  config = await fetchJson<Record<string, unknown>>("/api/analysis/config");
   renderConfigForm();
 }
 
 async function loadSessions(preferredSessionId = ""): Promise<void> {
   if (!rootInput || !sessionSelect) return;
+  const previousSessionId = sessionSelect.value;
   const params = new URLSearchParams({ root: rootInput.value });
   sessions = await fetchJson<CaptureSession[]>(`/api/analysis/sessions?${params.toString()}`);
   sessionSelect.innerHTML = [
@@ -308,6 +318,9 @@ async function loadSessions(preferredSessionId = ""): Promise<void> {
     sessionSelect.value = preferredSessionId;
   } else if (sessions.length > 0) {
     sessionSelect.value = sessions[0].session_id;
+  }
+  if (previousSessionId && sessionSelect.value && previousSessionId !== sessionSelect.value) {
+    resetFrameRangeForSelectedSession();
   }
   renderVideos();
   renderConfigForm();
@@ -1195,6 +1208,48 @@ function renderConfigForm(): void {
   }).join("");
 }
 
+function loadStoredAnalysisConfig(): Record<string, unknown> | null {
+  try {
+    const raw = window.localStorage.getItem(analysisConfigStorageKey);
+    return raw ? JSON.parse(raw) as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}
+
+function storeAnalysisConfig(nextConfig: Record<string, unknown>): void {
+  try {
+    window.localStorage.setItem(analysisConfigStorageKey, JSON.stringify(nextConfig));
+  } catch {
+    // Keeping the in-memory config is enough when storage is unavailable.
+  }
+}
+
+function clearStoredAnalysisConfig(): void {
+  try {
+    window.localStorage.removeItem(analysisConfigStorageKey);
+  } catch {
+    // The current view can still be reset when storage is unavailable.
+  }
+}
+
+function mergeConfig(baseConfig: Record<string, unknown>, storedConfig: Record<string, unknown> | null): Record<string, unknown> {
+  if (!storedConfig) return baseConfig;
+  const next = structuredClone(baseConfig) as Record<string, unknown>;
+  mergeConfigObject(next, storedConfig);
+  return next;
+}
+
+function mergeConfigObject(target: Record<string, unknown>, source: Record<string, unknown>): void {
+  Object.entries(source).forEach(([key, value]) => {
+    if (isObject(value) && isObject(target[key])) {
+      mergeConfigObject(target[key] as Record<string, unknown>, value);
+      return;
+    }
+    target[key] = value;
+  });
+}
+
 function orderedConfigEntries(): Array<[string, unknown]> {
   const entries = Object.entries(config);
   const entryMap = new Map(entries);
@@ -1306,6 +1361,11 @@ function frameRangeMax(): number {
   return Math.max(1, counts.length > 0 ? Math.min(...counts) - 1 : 320);
 }
 
+function resetFrameRangeForSelectedSession(): void {
+  setConfigPathValue(config, ["base", "frame_range"], [0, frameRangeMax()]);
+  storeAnalysisConfig(config);
+}
+
 function frameRangeValue(value: unknown, maxFrame: number): [number, number] {
   if (Array.isArray(value) && value.length >= 2) {
     return [
@@ -1321,12 +1381,14 @@ function renderFrameRangeControl(value: unknown): string {
   const [startRaw, endRaw] = frameRangeValue(value, maxFrame);
   const start = Math.min(startRaw, endRaw);
   const end = Math.max(startRaw, endRaw);
+  const startPercent = frameRangePercent(start, maxFrame);
+  const endPercent = frameRangePercent(end, maxFrame);
   return `
     <div class="frame-range-control" data-frame-range-control>
       <div class="frame-range-label-row">
         <span>frame_range</span>
       </div>
-      <div class="frame-range-slider">
+      <div class="frame-range-slider" style="--frame-range-start: ${startPercent}%; --frame-range-end: ${endPercent}%;">
         <input type="range" min="0" max="${maxFrame}" step="1" value="${start}" data-frame-range-min>
         <input type="range" min="0" max="${maxFrame}" step="1" value="${end}" data-frame-range-max>
       </div>
@@ -1336,6 +1398,10 @@ function renderFrameRangeControl(value: unknown): string {
       </div>
     </div>
   `;
+}
+
+function frameRangePercent(value: number, maxFrame: number): number {
+  return Math.max(0, Math.min(100, (value / Math.max(1, maxFrame)) * 100));
 }
 
 function renderSegmentedControl(path: string, key: string, value: string, options: string[]): string {
@@ -1409,6 +1475,7 @@ function syncFrameRangeControl(control: HTMLElement): void {
   const maxInput = control.querySelector<HTMLInputElement>("[data-frame-range-max]");
   const minLabel = control.querySelector<HTMLElement>("[data-frame-range-min-label]");
   const maxLabel = control.querySelector<HTMLElement>("[data-frame-range-max-label]");
+  const slider = control.querySelector<HTMLElement>(".frame-range-slider");
   if (!minInput || !maxInput) return;
   let start = Number(minInput.value || "0");
   let end = Number(maxInput.value || "0");
@@ -1419,6 +1486,11 @@ function syncFrameRangeControl(control: HTMLElement): void {
   }
   if (minLabel) minLabel.textContent = `f${start}`;
   if (maxLabel) maxLabel.textContent = `f${end}`;
+  if (slider) {
+    const maxFrame = Number(maxInput.max || minInput.max || frameRangeMax());
+    slider.style.setProperty("--frame-range-start", `${frameRangePercent(start, maxFrame)}%`);
+    slider.style.setProperty("--frame-range-end", `${frameRangePercent(end, maxFrame)}%`);
+  }
 }
 
 function handleConfigFormInput(event: Event): void {
@@ -1428,6 +1500,8 @@ function handleConfigFormInput(event: Event): void {
   if (frameRange) {
     syncFrameRangeControl(frameRange);
   }
+  config = readConfigForm();
+  storeAnalysisConfig(config);
 }
 
 function handleConfigFormClick(event: MouseEvent): void {
@@ -1440,6 +1514,8 @@ function handleConfigFormClick(event: MouseEvent): void {
   control.querySelectorAll<HTMLButtonElement>("[data-segment-value]").forEach((option) => {
     option.classList.toggle("active", option === button);
   });
+  config = readConfigForm();
+  storeAnalysisConfig(config);
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -2078,10 +2154,11 @@ function updateVideoTimecode(currentTime: number): void {
   const duration = Number(videoSeek?.max || primaryVideo?.duration || 0);
   const fps = Number(session?.videos[0]?.fps || 0);
   const totalFrames = Number(session?.videos[0]?.frame_count || 0);
+  const lastFrameIndex = Math.max(0, totalFrames - 1);
   const currentFrame = fps > 0
-    ? Math.min(totalFrames || Number.POSITIVE_INFINITY, Math.max(0, Math.round(currentTime * fps)))
+    ? Math.min(lastFrameIndex, Math.max(0, Math.round(currentTime * fps)))
     : 0;
-  videoTimecode.textContent = `${formatVideoTime(currentTime)} / ${formatVideoTime(duration)} (${currentFrame} / ${totalFrames || 0})`;
+  videoTimecode.textContent = `${formatVideoTime(currentTime)} / ${formatVideoTime(duration)} (${currentFrame} / ${lastFrameIndex})`;
 }
 
 function formatVideoTime(seconds: number): string {
@@ -2099,6 +2176,8 @@ async function runAnalysis(): Promise<void> {
   logPanel!.textContent = "";
   log("Analysis queued");
   const analysisConfig = readConfigForm();
+  config = analysisConfig;
+  storeAnalysisConfig(config);
   logAnalysisConfig(analysisConfig);
   try {
     if (calibrationUploadPending) {
@@ -2200,12 +2279,14 @@ sessionSelect?.addEventListener("change", () => {
   keypointFrameData = null;
   keypointFrameRequestKey = "";
   keypointUndoStack = [];
+  resetFrameRangeForSelectedSession();
   renderVideos();
   renderConfigForm();
   loadAnalysisResults().catch(() => undefined);
   uploadCalibrationFile(false).catch(() => undefined);
 });
 configForm?.addEventListener("input", handleConfigFormInput);
+configForm?.addEventListener("change", handleConfigFormInput);
 configForm?.addEventListener("click", handleConfigFormClick);
 calibrationForm?.addEventListener("submit", (event) => event.preventDefault());
 calibrationFile?.addEventListener("change", () => {
@@ -2402,6 +2483,9 @@ videoSeek?.addEventListener("change", () => {
 });
 videoSpeed?.addEventListener("change", setPlaybackSpeed);
 runButton?.addEventListener("click", runAnalysis);
+resetConfigButton?.addEventListener("click", () => {
+  resetConfigToDefault().catch((error) => log(error instanceof Error ? error.message : "Default config load failed"));
+});
 
 const initialSessionId = page?.dataset.initialSessionId || "";
 loadConfig().catch((error) => log(error instanceof Error ? error.message : "Config load failed"));

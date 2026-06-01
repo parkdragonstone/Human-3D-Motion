@@ -14,7 +14,7 @@ class JsonSettingsRepository(SettingsRepository):
 
     def get_storage_root(self) -> str:
         data = self._read()
-        storage_root = os.environ.get("BASEBALL_MOTION_STORAGE") or data.get("storage_root")
+        storage_root = os.environ.get("HUMAN_3D_MOTION_STORAGE") or data.get("storage_root")
         if storage_root:
             path = Path(storage_root).expanduser().resolve()
         else:

@@ -883,81 +883,35 @@ def calibrate_extrinsic_scene_from_points(
     image_points_cam2: list[dict],
 ) -> dict[str, Any]:
     """
-    Solve PnP for each camera from (3D object points) <-> (2D image points on first frame),
-    then compute relative transform cam1->cam2.
+    Compatibility wrapper for the old two-camera result shape.
     """
-    cv2 = _ensure_cv2()
+    result = calibrate_extrinsic_scene_from_points_multi(
+        {"cam1": intr1, "cam2": intr2},
+        object_points,
+        {"cam1": image_points_cam1, "cam2": image_points_cam2},
+    )
+    if not result.get("ok"):
+        return result
 
-    try:
-        K1 = np.asarray(intr1.get("camera_matrix"), dtype=np.float64)
-        D1 = np.asarray(intr1.get("dist_coeffs"), dtype=np.float64).reshape(-1, 1)
-        K2 = np.asarray(intr2.get("camera_matrix"), dtype=np.float64)
-        D2 = np.asarray(intr2.get("dist_coeffs"), dtype=np.float64).reshape(-1, 1)
-    except Exception as e:
-        return {"ok": False, "error": f"bad_intrinsic_payload: {e}"}
-
-    if not isinstance(object_points, list) or len(object_points) < 6:
-        return {"ok": False, "error": "need_at_least_6_object_points"}
-
-    def _map_points(lst, keys):
-        out = {}
-        for it in (lst or []):
-            pid = it.get("id")
-            if pid in (None, ""):
-                continue
-            ok = True
-            vals = []
-            for k in keys:
-                v = it.get(k, None)
-                if v is None:
-                    ok = False
-                    break
-                try:
-                    vals.append(float(v))
-                except Exception:
-                    ok = False
-                    break
-            if ok:
-                out[pid] = vals
-        return out
-
-    obj = _map_points(object_points, ("x", "y", "z"))
-    img1 = _map_points(image_points_cam1, ("u", "v"))
-    img2 = _map_points(image_points_cam2, ("u", "v"))
-
-    common = sorted(set(obj.keys()) & set(img1.keys()) & set(img2.keys()))
-    if len(common) < 6:
-        return {"ok": False, "error": f"not_enough_matched_points: {len(common)}"}
-
-    objp = np.asarray([obj[i] for i in common], dtype=np.float64).reshape(-1, 3)
-    ip1 = np.asarray([img1[i] for i in common], dtype=np.float64).reshape(-1, 2)
-    ip2 = np.asarray([img2[i] for i in common], dtype=np.float64).reshape(-1, 2)
-
-    ok1, rvec1, tvec1, inliers1 = _solve_scene_pnp(cv2, objp, ip1, K1, D1)
-    ok2, rvec2, tvec2, inliers2 = _solve_scene_pnp(cv2, objp, ip2, K2, D2)
-
-    if not ok1 or not ok2:
-        return {"ok": False, "error": "solvepnp_not_ok", "matched_points": int(len(common)), "common_ids": common}
-
-    rms1 = _scene_reproj_rms(cv2, K1, D1, rvec1, tvec1, objp, ip1, inliers1)
-    rms2 = _scene_reproj_rms(cv2, K2, D2, rvec2, tvec2, objp, ip2, inliers2)
-    rms1_cm = _scene_reproj_rms_cm(cv2, K1, D1, rvec1, tvec1, objp, ip1, inliers1)
-    rms2_cm = _scene_reproj_rms_cm(cv2, K2, D2, rvec2, tvec2, objp, ip2, inliers2)
+    cameras = result.get("cameras") or {}
+    cam1 = cameras.get("cam1") or {}
+    cam2 = cameras.get("cam2") or {}
+    common_ids = sorted(set(cam1.get("point_ids") or []) & set(cam2.get("point_ids") or []))
 
     return {
         "ok": True,
-        "rvec_cam1": np.asarray(rvec1, dtype=np.float64).reshape(3).tolist(),
-        "tvec_cam1": np.asarray(tvec1, dtype=np.float64).reshape(3).tolist(),
-        "rvec_cam2": np.asarray(rvec2, dtype=np.float64).reshape(3).tolist(),
-        "tvec_cam2": np.asarray(tvec2, dtype=np.float64).reshape(3).tolist(),
-        "matched_points": len(common),
-        "inliers_cam1": int(len(inliers1) if inliers1 is not None else 0),
-        "inliers_cam2": int(len(inliers2) if inliers2 is not None else 0),
-        "reproj_rms_cam1_px": rms1,
-        "reproj_rms_cam2_px": rms2,
-        "reproj_rms_cam1_cm": rms1_cm,
-        "reproj_rms_cam2_cm": rms2_cm,
-        "point_ids": common,
+        "rvec_cam1": cam1.get("rvec"),
+        "tvec_cam1": cam1.get("tvec"),
+        "rvec_cam2": cam2.get("rvec"),
+        "tvec_cam2": cam2.get("tvec"),
+        "matched_points": min(int(cam1.get("matched_points") or 0), int(cam2.get("matched_points") or 0)),
+        "inliers_cam1": int(cam1.get("inliers") or 0),
+        "inliers_cam2": int(cam2.get("inliers") or 0),
+        "reproj_rms_cam1_px": cam1.get("reproj_rms_px"),
+        "reproj_rms_cam2_px": cam2.get("reproj_rms_px"),
+        "reproj_rms_cam1_cm": cam1.get("reproj_rms_cm"),
+        "reproj_rms_cam2_cm": cam2.get("reproj_rms_cm"),
+        "point_ids": common_ids,
     }
 
 

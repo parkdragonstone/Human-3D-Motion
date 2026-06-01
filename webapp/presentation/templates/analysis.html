@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Analysis | Baseball Motion{% endblock %}
+{% block title %}Analysis | Human 3D Motion{% endblock %}
 
 {% block head %}
   <link rel="stylesheet" href="{{ static_asset('css/analysis.css') }}">
@@ -180,9 +180,12 @@
 </div>
 
 <aside class="analysis-settings-surface" data-analysis-settings-surface>
-  <div class="section-title">
-    <span>03</span>
-    <h2>Settings</h2>
+  <div class="section-title analysis-settings-title">
+    <div>
+      <span>03</span>
+      <h2>Settings</h2>
+    </div>
+    <button class="button secondary compact-button" type="button" data-reset-analysis-config>Default</button>
   </div>
   <div class="analysis-settings-scroll">
     <form class="analysis-config-form" data-analysis-config-form></form>

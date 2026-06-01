@@ -29,7 +29,7 @@ def create_app():
         template_folder=str(Path(__file__).resolve().parent / "templates"),
         static_folder=str(Path(__file__).resolve().parent / "static"),
     )
-    app.config["SECRET_KEY"] = os.environ.get("BASEBALL_MOTION_SECRET", "dev")
+    app.config["SECRET_KEY"] = os.environ.get("HUMAN_3D_MOTION_SECRET", "dev")
     app.config["TEMPLATES_AUTO_RELOAD"] = True
     app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
     socketio = SocketIO(
@@ -669,7 +669,7 @@ def _root_selection_to_dict(selection, root_key: str) -> dict:
 
 
 def _base_url() -> str:
-    public_url = os.environ.get("BASEBALL_MOTION_PUBLIC_URL", "").strip()
+    public_url = os.environ.get("HUMAN_3D_MOTION_PUBLIC_URL", "").strip()
     if public_url:
         return public_url.rstrip("/") + "/"
     return request.url_root
@@ -682,4 +682,4 @@ def _static_asset_url(filename: str) -> str:
 
 
 def _app_logo_path() -> Path:
-    return Path(__file__).resolve().parents[2] / "images" / "baseball-motion.png"
+    return Path(__file__).resolve().parents[2] / "images" / "human-3d-motion.png"

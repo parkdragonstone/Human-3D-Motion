@@ -8,6 +8,7 @@ import logging
 from .interpolation import interpolate_3d_keypoints
 from .keypoints import (
     camera_sort_key as _camera_sort_key,
+    filter_frame_numbers as _filter_frame_numbers,
     get_frame_number,
     load_synchronized_kps,
     normalize_camera_label as _normalize_camera_label,
@@ -208,7 +209,7 @@ def _select_people_by_reprojection(people_by_camera, camera_labels, projection_m
     return best, best_score
 
 
-def load_synchronized_kps_multi_auto(camera_dirs, camera_labels, projection_matrices, lifting_config):
+def load_synchronized_kps_multi_auto(camera_dirs, camera_labels, projection_matrices, lifting_config, frame_range=None):
     files_by_camera = {
         label: {get_frame_number(f): f for f in os.listdir(path) if f.endswith('.json')}
         for label, path in camera_dirs.items()
@@ -216,7 +217,10 @@ def load_synchronized_kps_multi_auto(camera_dirs, camera_labels, projection_matr
     if not files_by_camera:
         return {}, [], {}
 
-    common_frames = sorted(set.intersection(*(set(files.keys()) for files in files_by_camera.values())))
+    common_frames = _filter_frame_numbers(
+        set.intersection(*(set(files.keys()) for files in files_by_camera.values())),
+        frame_range,
+    )
     kps_by_camera = {label: [] for label in camera_labels}
     valid_frames = []
     selection_stats = {
@@ -572,6 +576,7 @@ def run_3d_lifting(config, emit_log=None):
     os.makedirs(pose3d_dir, exist_ok=True)
 
     fps = config.get('base').get('fps')
+    frame_range = config.get('base').get('frame_range')
     flip_left_right = config.get('lifting', {}).get('flip_left_right', True)
     calibration_bundle = config.get('calibration', None)
     use_bundle = _has_full_calibration(calibration_bundle)
@@ -597,6 +602,7 @@ def run_3d_lifting(config, emit_log=None):
             camera_labels,
             projection_matrices,
             config.get('lifting', {}),
+            frame_range=frame_range,
         )
         if len(valid_frames) == 0:
             logger.error("3D Lifting: no synchronized pose frames found for calibrated cameras.")
@@ -636,6 +642,7 @@ def run_3d_lifting(config, emit_log=None):
             cam2_json_dir,
             cam1_person_idx=cam1_person_idx,
             cam2_person_idx=cam2_person_idx,
+            frame_range=frame_range,
         )
         if len(valid_frames) == 0:
             logger.error("3D Lifting: no synchronized pose frames found.")
@@ -648,6 +655,7 @@ def run_3d_lifting(config, emit_log=None):
         else:
             _log(f"3D Lifting: estimating self-calibration from {calib_frames} frames.")
             obj_points_calib, actual_calib = get_calibration_3d(kp1_list, kp2_list, height, calib_frames)
+            _log(f"3D Lifting self-calibration source frames: {valid_frames[:actual_calib]}")
 
         _log(f"3D Lifting triangulation: frames={len(valid_frames)} use_bundle={use_bundle}")
         final_3d_frames = triangulate_all_frames(

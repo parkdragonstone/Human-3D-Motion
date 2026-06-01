@@ -70,7 +70,7 @@ select_windows_storage_dir() {
     powershell.exe -NoProfile -Command '
       Add-Type -AssemblyName System.Windows.Forms
       $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-      $dialog.Description = "Select Baseball Motion storage folder"
+      $dialog.Description = "Select Human 3D Motion storage folder"
       $dialog.ShowNewFolderButton = $true
       if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
         Write-Output $dialog.SelectedPath
@@ -91,12 +91,12 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SELECTED_HOST_IP="${HOST_IP:-$(detect_windows_lan_ip)}"
 SELECTED_STORAGE_DIR="${STORAGE_DIR:-$(select_windows_storage_dir)}"
 
-export BASEBALL_MOTION_HTTPS="1"
-export BASEBALL_MOTION_PUBLIC_URL="https://${SELECTED_HOST_IP}:5000"
-export BASEBALL_MOTION_RECORDINGS_HOST="$SELECTED_STORAGE_DIR"
+export HUMAN_3D_MOTION_HTTPS="1"
+export HUMAN_3D_MOTION_PUBLIC_URL="https://${SELECTED_HOST_IP}:5000"
+export HUMAN_3D_MOTION_RECORDINGS_HOST="$SELECTED_STORAGE_DIR"
 
-echo "Selected Docker host LAN URL: ${BASEBALL_MOTION_PUBLIC_URL}"
-echo "Selected Windows storage folder mount: ${BASEBALL_MOTION_RECORDINGS_HOST} -> /app/recordings"
+echo "Selected Docker host LAN URL: ${HUMAN_3D_MOTION_PUBLIC_URL}"
+echo "Selected Windows storage folder mount: ${HUMAN_3D_MOTION_RECORDINGS_HOST} -> /app/recordings"
 echo "Local Docker URL: https://127.0.0.1:5000"
 echo "WSL LAN access may require mirrored networking or a Windows portproxy/firewall rule for port 5000."
 

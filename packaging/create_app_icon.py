@@ -10,7 +10,7 @@ ICON_SIZES = ((16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256
 
 def main() -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    source_path = repo_root / "images" / "baseball-motion.png"
+    source_path = repo_root / "images" / "human-3d-motion.png"
     icon_path = repo_root / "packaging" / "app_icon.ico"
     if not source_path.is_file():
         raise FileNotFoundError(f"App logo source is missing: {source_path}")

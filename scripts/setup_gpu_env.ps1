@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$environmentName = "baseball-motion"
+$environmentName = "human-3d-motion"
 
 function Assert-LastCommandSucceeded {
     param([string]$Step)

@@ -1,6 +1,6 @@
 # OpenSim + PoseProgram pip 의존성 한 번에 설치
-# conda env create -f environment.yml && conda activate baseball-motion
-name: baseball-motion
+# conda env create -f environment.yml && conda activate human-3d-motion
+name: human-3d-motion
 channels:
   - conda-forge
 dependencies:

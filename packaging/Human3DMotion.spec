@@ -44,7 +44,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="BaseballMotion",
+    name="Human3DMotion",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -59,13 +59,13 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name="BaseballMotion",
+    name="Human3DMotion",
 )
 
 if sys.platform == "darwin":
     app = BUNDLE(
         coll,
-        name="BaseballMotion.app",
+        name="Human3DMotion.app",
         icon=str(app_icon_path),
-        bundle_identifier="com.baseballmotion.app",
+        bundle_identifier="com.Human3DMotion.app",
     )

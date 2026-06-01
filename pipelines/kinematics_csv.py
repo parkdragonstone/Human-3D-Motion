@@ -25,7 +25,7 @@ def export_combined_kinematics_csv(
     filter_config: dict | None = None,
     subject_metadata: dict | None = None,
     fps: float | int | None = None,
-    motion: str = "Pitching",
+    motion: str = "Baseball-Pitching",
 ) -> Path:
     mot_df, in_degrees = _read_mot_dataframe(mot_path)
     trc_df = _read_trc_dataframe(trc_path)
@@ -42,7 +42,7 @@ def export_combined_kinematics_csv(
     sign_columns = [column for column in CONVERT_SIGN if column in combined_df.columns]
     combined_df[sign_columns] = combined_df[sign_columns] * -1
     combined_df = _prepend_subject_metadata(combined_df, subject_metadata, motion)
-    if motion == "Pitching":
+    if _is_pitching_motion(motion):
         combined_df = _append_pitching_parameters(combined_df, subject_metadata, fps)
     output_path = session_dir / f"{mot_path.stem}_keypoints_kinematics.csv"
     combined_df.to_csv(output_path, index=False)
@@ -61,6 +61,10 @@ def _prepend_subject_metadata(df: pd.DataFrame, subject_metadata: dict | None, m
     }
     metadata_df = pd.DataFrame({column: [value] * len(df) for column, value in metadata.items()})
     return pd.concat([metadata_df, df], axis=1)
+
+
+def _is_pitching_motion(motion: str) -> bool:
+    return motion in {"Pitching", "Baseball-Pitching"}
 
 
 def _append_pitching_parameters(

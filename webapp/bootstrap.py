@@ -44,7 +44,7 @@ class AppServices:
 
 
 def create_app_services() -> AppServices:
-    settings = JsonSettingsRepository(os.environ.get("BASEBALL_MOTION_SETTINGS", "webapp_data/settings.json"))
+    settings = JsonSettingsRepository(os.environ.get("HUMAN_3D_MOTION_SETTINGS", "webapp_data/settings.json"))
     sessions = FileSessionCatalog()
     session_query_service = SessionQueryService(sessions)
     camera_controller = _camera_controller_from_env(settings)
@@ -109,7 +109,7 @@ def create_app_services() -> AppServices:
 
 
 def _camera_controller_from_env(settings: JsonSettingsRepository) -> ModeCameraController:
-    sony_count = int(os.environ.get("BASEBALL_MOTION_CAMERA_COUNT", str(settings.get_camera_count())))
+    sony_count = int(os.environ.get("HUMAN_3D_MOTION_CAMERA_COUNT", str(settings.get_camera_count())))
     return ModeCameraController(
         settings,
         UrlCameraController(camera_count=sony_count),

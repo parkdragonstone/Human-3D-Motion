@@ -1,6 +1,6 @@
-# Baseball Motion
+# Human 3D Motion
 
-Baseball Motion is a local web app for capture, calibration, pose estimation, 3D reconstruction, and kinematics analysis.
+Human 3D Motion is a local web app for capture, calibration, pose estimation, 3D reconstruction, and kinematics analysis.
 
 ## Requirements
 
@@ -19,21 +19,21 @@ GPU on Windows PowerShell:
 
 ```powershell
 .\scripts\setup_gpu_env.ps1
-conda activate baseball-motion
+conda activate human-3d-motion
 ```
 
 GPU on Windows CMD:
 
 ```bat
 scripts\setup_gpu_env.cmd
-conda activate baseball-motion
+conda activate human-3d-motion
 ```
 
 CPU:
 
 ```bash
 conda env create -f environment-cpu.yml
-conda activate baseball-motion
+conda activate human-3d-motion
 ```
 
 Install frontend dependencies and build TypeScript:
@@ -68,10 +68,10 @@ To create a GPU Windows executable from CMD, place the model files at
 build_exe_gpu.cmd
 ```
 
-The build command creates or reuses the dedicated `baseball-motion-exe` Conda
+The build command creates or reuses the dedicated `human-3d-motion-exe` Conda
 environment, normalizes ONNX Runtime to `onnxruntime-gpu`, verifies CUDA pose
 backend selection, installs frontend/build dependencies, builds TypeScript, and
-generates the executable icon from `images/baseball-motion.png`.
+generates the executable icon from `images/human-3d-motion.png`.
 
 To create a CPU Windows executable instead, run:
 
@@ -80,15 +80,15 @@ build_exe_cpu.cmd
 ```
 
 The CPU build command creates or reuses the dedicated
-`baseball-motion-exe-cpu` Conda environment and verifies OpenVINO CPU pose
+`human-3d-motion-exe-cpu` Conda environment and verifies OpenVINO CPU pose
 backend selection. Both build commands create:
 
 ```text
-dist\BaseballMotion\BaseballMotion.exe
+dist\Human3DMotion\Human3DMotion.exe
 ```
 
 The output is a PyInstaller one-folder build. Keep the files beside the `.exe`
-in `dist\BaseballMotion` together when moving the app.
+in `dist\Human3DMotion` together when moving the app.
 
 To create a macOS CPU app, place the model files at `pipelines/models` first
 and run:
@@ -98,12 +98,12 @@ bash build_macos_cpu.sh
 ```
 
 The macOS build command creates or reuses the dedicated
-`baseball-motion-app-cpu` Conda environment, verifies OpenVINO CPU pose backend
-selection, generates an `.icns` icon from `images/baseball-motion.png`, and
+`human-3d-motion-app-cpu` Conda environment, verifies OpenVINO CPU pose backend
+selection, generates an `.icns` icon from `images/human-3d-motion.png`, and
 creates:
 
 ```text
-dist/BaseballMotion.app
+dist/Human3DMotion.app
 ```
 
 The macOS app is built locally for the architecture of the Python environment
@@ -130,20 +130,20 @@ browser shows a certificate warning, continue to the site for local use.
 To run without HTTPS:
 
 ```bash
-set BASEBALL_MOTION_HTTPS=0
+set HUMAN_3D_MOTION_HTTPS=0
 python -m webapp.main
 ```
 
 Then open:
 
 ```text
-http://127.0.0.1:5000
+http://127.0.0.1:9090
 ```
 
 To use another port:
 
 ```bash
-set BASEBALL_MOTION_PORT=5001
+set HUMAN_3D_MOTION_PORT=5001
 python -m webapp.main
 ```
 
@@ -180,7 +180,7 @@ For another device on the same network, use the Docker host LAN address:
 http://<docker-host-lan-ip>:5000
 ```
 
-Use the Docker host LAN address, not the container `172.x.x.x` address printed by Flask. Phone camera pages opened from another device need a secure browser context, so set `BASEBALL_MOTION_HTTPS=1` and `BASEBALL_MOTION_PUBLIC_URL=https://<docker-host-lan-ip>:5000` before starting Docker Compose when QR phone capture should use the LAN address. Continue through the self-signed certificate warning for local HTTPS use. If another device cannot open the LAN page, allow inbound TCP port `5000` through the Docker host firewall.
+Use the Docker host LAN address, not the container `172.x.x.x` address printed by Flask. Phone camera pages opened from another device need a secure browser context, so set `HUMAN_3D_MOTION_HTTPS=1` and `HUMAN_3D_MOTION_PUBLIC_URL=https://<docker-host-lan-ip>:5000` before starting Docker Compose when QR phone capture should use the LAN address. Continue through the self-signed certificate warning for local HTTPS use. If another device cannot open the LAN page, allow inbound TCP port `5000` through the Docker host firewall.
 
 The GPU container requires Docker with NVIDIA Container Toolkit. Both Docker profiles mount local `recordings`, `webapp_data`, and `pipelines/models` directories into the container. Docker-specific files are under `docker/`.
 

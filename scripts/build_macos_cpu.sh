@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-ENVIRONMENT_NAME="baseball-motion-app-cpu"
+ENVIRONMENT_NAME="human-3d-motion-app-cpu"
 
 has_conda_environment() {
   conda env list | awk '{ print $1 }' | grep -Fxq "$ENVIRONMENT_NAME"
@@ -28,6 +28,6 @@ npm run build:ts
 
 conda run -n "$ENVIRONMENT_NAME" python packaging/create_macos_app_icon.py
 conda run -n "$ENVIRONMENT_NAME" python -m pip install "pyinstaller>=6.0"
-conda run -n "$ENVIRONMENT_NAME" python -m PyInstaller --noconfirm --clean packaging/BaseballMotion.spec
+conda run -n "$ENVIRONMENT_NAME" python -m PyInstaller --noconfirm --clean packaging/Human3DMotion.spec
 
-echo "macOS app build complete: $REPO_ROOT/dist/BaseballMotion.app"
+echo "macOS app build complete: $REPO_ROOT/dist/Human3DMotion.app"

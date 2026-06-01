@@ -12,6 +12,20 @@ def get_frame_number(filename):
     return int(match[-1]) if match else -1
 
 
+def filter_frame_numbers(frame_numbers, frame_range):
+    sorted_frames = sorted(frame_numbers)
+    if frame_range in (None, "all", "auto", []):
+        return sorted_frames
+    try:
+        start = int(frame_range[0])
+        end = int(frame_range[1])
+    except (TypeError, ValueError, IndexError):
+        return sorted_frames
+    if end < start:
+        start, end = end, start
+    return [frame for frame in sorted_frames if start <= frame <= end]
+
+
 def select_person_by_index(people, person_idx: int, camera_name: str, frame_idx: int):
     """Select by zero-based position in JSON people[], not by person_id."""
     if not (0 <= person_idx < len(people)):
@@ -22,10 +36,10 @@ def select_person_by_index(people, person_idx: int, camera_name: str, frame_idx:
     return people[person_idx]
 
 
-def load_synchronized_kps(cam1_dir, cam2_dir, cam1_person_idx: int = 0, cam2_person_idx: int = 0):
+def load_synchronized_kps(cam1_dir, cam2_dir, cam1_person_idx: int = 0, cam2_person_idx: int = 0, frame_range=None):
     cam1_files = {get_frame_number(filename): filename for filename in os.listdir(cam1_dir) if filename.endswith(".json")}
     cam2_files = {get_frame_number(filename): filename for filename in os.listdir(cam2_dir) if filename.endswith(".json")}
-    common_frames = sorted(set(cam1_files).intersection(cam2_files))
+    common_frames = filter_frame_numbers(set(cam1_files).intersection(cam2_files), frame_range)
 
     kp1_list, kp2_list, valid_frames = [], [], []
     for frame_idx in common_frames:

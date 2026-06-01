@@ -22,7 +22,7 @@ For phone capture over the LAN from Windows PowerShell, use the launch scripts:
 ```
 
 The scripts detect active host LAN IPv4 candidates, set HTTPS and
-`BASEBALL_MOTION_PUBLIC_URL`, print the selected LAN URL, and start Compose.
+`HUMAN_3D_MOTION_PUBLIC_URL`, print the selected LAN URL, and start Compose.
 When the detected address is not the network the phone can reach, override it:
 
 ```powershell
@@ -30,7 +30,7 @@ When the detected address is not the network the phone can reach, override it:
 ```
 
 The Flask `Running on ...` lines still show bind addresses inside Docker such as
-`127.0.0.1` and `172.x.x.x`. The app prints `Baseball Motion public URL: ...`
+`127.0.0.1` and `172.x.x.x`. The app prints `Human 3D Motion public URL: ...`
 separately when the script-provided LAN URL is active.
 
 When Docker runs inside WSL, use the shell launch scripts from WSL:
@@ -53,7 +53,7 @@ bash docker/run_gpu.sh --host-ip 192.168.0.10
 When the folder chooser cannot open, pass an existing WSL-visible folder path:
 
 ```bash
-bash docker/run_gpu.sh --storage-dir /mnt/c/Users/USER/Desktop/PYS/BaseballMotion/recordings
+bash docker/run_gpu.sh --storage-dir /mnt/c/Users/USER/Desktop/PYS/Human3DMotion/recordings
 ```
 
 The in-app `Select Path` button cannot mount a new arbitrary Windows folder
@@ -84,8 +84,8 @@ scripts above set this automatically. To start Compose manually, turn on the
 self-signed development HTTPS server and set the public URL first:
 
 ```powershell
-$env:BASEBALL_MOTION_HTTPS="1"
-$env:BASEBALL_MOTION_PUBLIC_URL="https://<docker-host-lan-ip>:5000"
+$env:HUMAN_3D_MOTION_HTTPS="1"
+$env:HUMAN_3D_MOTION_PUBLIC_URL="https://<docker-host-lan-ip>:5000"
 docker compose -f docker/docker-compose.yml --profile cpu up --build
 ```
 

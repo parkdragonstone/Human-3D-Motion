@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Calibration | Baseball Motion{% endblock %}
+{% block title %}Calibration | Human 3D Motion{% endblock %}
 
 {% block head %}
   <link rel="stylesheet" href="{{ static_asset('css/capture.css') }}">
@@ -216,7 +216,7 @@
           </label>
           <label>
             <input type="radio" name="extrinsic_calibration_target" value="chessboard" data-extrinsic-target-option>
-            <span>Chessboard</span>
+            <span>CheckerBoard</span>
           </label>
         </div>
         <label data-extrinsic-object-fields>
@@ -255,7 +255,7 @@
           <input name="checker_board_rows" type="number" min="2" value="6">
         </label>
         <label data-extrinsic-chessboard-fields hidden>
-          Chessboard Direction
+          CheckerBoard Direction
           <select name="chessboard_orientation" data-chessboard-orientation>
             <option value="horizontal" selected>Horizontal</option>
             <option value="vertical">Vertical</option>
