@@ -15,6 +15,7 @@ from typing import Optional
 @dataclass
 class BaseConfig:
     motion: str = "Baseball-Pitching"
+    walking_direction: str = "-z"
     frame_range: str = "auto"  # "auto" 또는 [start, end]; 변경하지 말 것
 
 
@@ -113,6 +114,7 @@ class AnalysisConfig:
         return {
             "base": {
                 "motion": self.base.motion,
+                "walking_direction": self.base.walking_direction,
                 "frame_range": self.base.frame_range,
             },
             "pose": {
@@ -202,6 +204,7 @@ class AnalysisConfig:
         return cls(
             base=BaseConfig(
                 motion=base_d.get("motion", "Baseball-Pitching"),
+                walking_direction=base_d.get("walking_direction", "-z"),
                 frame_range=base_d.get("frame_range", "auto"),
             ),
             pose=PoseConfig(

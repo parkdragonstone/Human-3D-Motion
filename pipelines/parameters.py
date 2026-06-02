@@ -1,8 +1,9 @@
-"""Extract pitching event frames from the combined kinematics CSV."""
+"""Extract motion event frames from the combined kinematics CSV."""
 from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 
@@ -42,6 +43,45 @@ def extract_pitching_events_from_dataframe(
         "knee_high": _event_at(df, knee_high_index),
         "mer": _event_at(df, mer_index),
         "ball_release": _event_at(df, ball_release_index),
+    }
+
+
+def extract_walking_events(
+    csv_path: str | Path,
+    walking_direction: str = "-z",
+) -> dict[str, list[dict[str, float | int | None]]]:
+    df = pd.read_csv(csv_path)
+    return extract_walking_events_from_dataframe(df, walking_direction)
+
+
+def extract_walking_events_from_dataframe(
+    df: pd.DataFrame,
+    walking_direction: str = "-z",
+) -> dict[str, list[dict[str, float | int | None]]]:
+    df = df.reset_index(drop=True)
+    axis, direction_sign = _walking_axis(walking_direction)
+    hip_column = f"keypoint_Hip_{axis}"
+    return {
+        "right_hc": _events_from_local_extrema(
+            df,
+            _relative_ap(df, f"keypoint_RHeel_{axis}", hip_column, direction_sign),
+            "max",
+        ),
+        "right_to": _events_from_local_extrema(
+            df,
+            _relative_ap(df, f"keypoint_RBigToe_{axis}", hip_column, direction_sign),
+            "min",
+        ),
+        "left_hc": _events_from_local_extrema(
+            df,
+            _relative_ap(df, f"keypoint_LHeel_{axis}", hip_column, direction_sign),
+            "max",
+        ),
+        "left_to": _events_from_local_extrema(
+            df,
+            _relative_ap(df, f"keypoint_LBigToe_{axis}", hip_column, direction_sign),
+            "min",
+        ),
     }
 
 
@@ -136,3 +176,37 @@ def _require_columns(df: pd.DataFrame, columns: list[str]) -> None:
     missing_columns = [column for column in columns if column not in df.columns]
     if missing_columns:
         raise ValueError(f"Missing required columns: {missing_columns}")
+
+
+def _walking_axis(walking_direction: str) -> tuple[str, int]:
+    normalized = str(walking_direction or "-z").strip().lower()
+    if normalized not in {"+x", "-x", "+z", "-z"}:
+        raise ValueError("walking_direction must be one of +x, -x, +z, -z")
+    return normalized[1], 1 if normalized[0] == "+" else -1
+
+
+def _relative_ap(df: pd.DataFrame, marker_column: str, hip_column: str, direction_sign: int) -> pd.Series:
+    _require_columns(df, [marker_column, hip_column])
+    marker_ap = pd.to_numeric(df[marker_column], errors="coerce")
+    hip_ap = pd.to_numeric(df[hip_column], errors="coerce")
+    return direction_sign * (marker_ap - hip_ap)
+
+
+def _events_from_local_extrema(
+    df: pd.DataFrame,
+    values: pd.Series,
+    extrema_type: str,
+) -> list[dict[str, float | int | None]]:
+    numeric_values = values.to_numpy(dtype=float)
+    events: list[dict[str, float | int | None]] = []
+    for index in range(1, len(numeric_values) - 1):
+        previous_value = numeric_values[index - 1]
+        current_value = numeric_values[index]
+        next_value = numeric_values[index + 1]
+        if not np.isfinite([previous_value, current_value, next_value]).all():
+            continue
+        if extrema_type == "max" and current_value > previous_value and current_value > next_value:
+            events.append(_event_at(df, index))
+        elif extrema_type == "min" and current_value < previous_value and current_value < next_value:
+            events.append(_event_at(df, index))
+    return events

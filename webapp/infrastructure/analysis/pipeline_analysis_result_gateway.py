@@ -184,10 +184,14 @@ class PipelineAnalysisResultGateway:
         return columns
 
     def recalculate_kinematics_event_markers(self, csv_path: str) -> list[dict[str, float | int | str]]:
-        from pipelines.parameters import extract_pitching_events_from_dataframe
+        from pipelines.parameters import extract_pitching_events_from_dataframe, extract_walking_events_from_dataframe
 
         try:
             df = pd.read_csv(csv_path)
+            motion = _first_text_value(df, "motion").strip().lower()
+            if motion == "walking":
+                walking_direction = _first_text_value(df, "walking_direction") or "-z"
+                return _walking_event_markers(extract_walking_events_from_dataframe(df, walking_direction))
             if "hand" not in df.columns:
                 return []
             hand_values = df["hand"].dropna()
@@ -219,6 +223,42 @@ class PipelineAnalysisResultGateway:
                 marker["frame"] = int(frame)
             markers.append(marker)
         return markers
+
+
+def _walking_event_markers(events: dict[str, list[dict[str, float | int | str]]]) -> list[dict[str, float | int | str]]:
+    labels = {
+        "right_hc": ("Right HC", "Right Heel Contact"),
+        "right_to": ("Right TO", "Right Toe Off"),
+        "left_hc": ("Left HC", "Left Heel Contact"),
+        "left_to": ("Left TO", "Left Toe Off"),
+    }
+    markers: list[dict[str, float | int | str]] = []
+    for key, event_list in events.items():
+        label, description = labels[key]
+        for occurrence_index, event in enumerate(event_list, start=1):
+            time = event.get("time")
+            if time is None:
+                continue
+            marker: dict[str, float | int | str] = {
+                "key": f"{key}_{occurrence_index}",
+                "label": label,
+                "description": description,
+                "time": float(time),
+            }
+            frame = event.get("frame")
+            if frame is not None:
+                marker["frame"] = int(frame)
+            markers.append(marker)
+    return sorted(markers, key=lambda marker: float(marker["time"]))
+
+
+def _first_text_value(df: pd.DataFrame, column: str) -> str:
+    if column not in df.columns:
+        return ""
+    values = df[column].dropna()
+    if values.empty:
+        return ""
+    return str(values.iloc[0])
 
 
 def _safe_float(value) -> float | None:

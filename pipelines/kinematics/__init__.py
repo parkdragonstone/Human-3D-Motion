@@ -153,5 +153,6 @@ def run_kinematics(config_dict, emit_log=None):
             subject_metadata=subject,
             fps=base.get("fps"),
             motion=base.get("motion", "Baseball-Pitching"),
+            walking_direction=base.get("walking_direction", "-z"),
         )
         _log(f"\tCombined keypoint and kinematics CSV saved to {combined_csv_path.resolve()}\n")

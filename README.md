@@ -187,3 +187,8 @@ name_height_weight_hand_YYYYMMDD_HHMMSS_cam02.mp4
 5. Select a session and run analysis.
 
 Analysis keeps its own root path separate from Capture/Calibration storage root.
+
+
+## Reference
+
+1. Zeni Jr, J. A., Richards, J. G., & Higginson, J. (2008). Two simple methods for determining gait events during treadmill and overground walking using kinematic data. Gait & posture, 27(4), 710-714. / Detect Gait Events toe off, heel strike Using Heel, Toe, Sacrum (we use Hip instaed)

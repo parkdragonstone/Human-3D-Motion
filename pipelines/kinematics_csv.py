@@ -8,7 +8,7 @@ import pandas as pd
 from scipy.signal import butter, filtfilt
 from scipy.spatial.transform import Rotation
 
-from .parameters import extract_pitching_events_from_dataframe
+from .parameters import extract_pitching_events_from_dataframe, extract_walking_events_from_dataframe
 from .utilities import read_trc
 
 
@@ -26,6 +26,7 @@ def export_combined_kinematics_csv(
     subject_metadata: dict | None = None,
     fps: float | int | None = None,
     motion: str = "Baseball-Pitching",
+    walking_direction: str = "-z",
 ) -> Path:
     mot_df, in_degrees = _read_mot_dataframe(mot_path)
     trc_df = _read_trc_dataframe(trc_path)
@@ -41,15 +42,22 @@ def export_combined_kinematics_csv(
     combined_df = pd.concat([trc_df, kinematics_df.drop(columns=["time"]), velocity_df], axis=1)
     sign_columns = [column for column in CONVERT_SIGN if column in combined_df.columns]
     combined_df[sign_columns] = combined_df[sign_columns] * -1
-    combined_df = _prepend_subject_metadata(combined_df, subject_metadata, motion)
+    combined_df = _prepend_subject_metadata(combined_df, subject_metadata, motion, walking_direction)
     if _is_pitching_motion(motion):
         combined_df = _append_pitching_parameters(combined_df, subject_metadata, fps)
+    if _is_walking_motion(motion):
+        combined_df = _append_walking_parameters(combined_df, walking_direction)
     output_path = session_dir / f"{mot_path.stem}_keypoints_kinematics.csv"
     combined_df.to_csv(output_path, index=False)
     return output_path
 
 
-def _prepend_subject_metadata(df: pd.DataFrame, subject_metadata: dict | None, motion: str) -> pd.DataFrame:
+def _prepend_subject_metadata(
+    df: pd.DataFrame,
+    subject_metadata: dict | None,
+    motion: str,
+    walking_direction: str,
+) -> pd.DataFrame:
     if not subject_metadata:
         return df
     metadata = {
@@ -57,14 +65,20 @@ def _prepend_subject_metadata(df: pd.DataFrame, subject_metadata: dict | None, m
         "height": subject_metadata.get("height"),
         "weight": subject_metadata.get("weight"),
         "motion": motion,
-        "hand": subject_metadata.get("hand"),
     }
+    if _is_walking_motion(motion):
+        metadata["walking_direction"] = walking_direction
+    metadata["hand"] = subject_metadata.get("hand")
     metadata_df = pd.DataFrame({column: [value] * len(df) for column, value in metadata.items()})
     return pd.concat([metadata_df, df], axis=1)
 
 
 def _is_pitching_motion(motion: str) -> bool:
     return motion in {"Pitching", "Baseball-Pitching"}
+
+
+def _is_walking_motion(motion: str) -> bool:
+    return str(motion).strip().lower() == "walking"
 
 
 def _append_pitching_parameters(
@@ -79,6 +93,30 @@ def _append_pitching_parameters(
         df[f"{event_name}_frame"] = event["frame"]
         df[f"{event_name}_time"] = event["time"]
     return df
+
+
+def _append_walking_parameters(df: pd.DataFrame, walking_direction: str) -> pd.DataFrame:
+    if "walking_direction" not in df.columns:
+        df = df.copy()
+        df["walking_direction"] = walking_direction
+    events = extract_walking_events_from_dataframe(df, walking_direction)
+    event_df = _walking_event_columns(events, len(df))
+    return pd.concat([df, event_df], axis=1)
+
+
+def _walking_event_columns(events: dict[str, list[dict[str, float | int | None]]], row_count: int) -> pd.DataFrame:
+    columns = ["right_hc_frame", "right_to_frame", "left_hc_frame", "left_to_frame"]
+    event_df = pd.DataFrame({column: [pd.NA] * row_count for column in columns})
+    for event_name in ("right_hc", "right_to", "left_hc", "left_to"):
+        column = f"{event_name}_frame"
+        frames = [
+            event.get("frame")
+            for event in events.get(event_name, [])
+            if event.get("frame") is not None
+        ]
+        for row_index, frame in enumerate(frames[:row_count]):
+            event_df.at[row_index, column] = frame
+    return event_df
 
 
 def resolve_keypoint_trc(session_dir: Path, fallback_trc_path: Path) -> Path:

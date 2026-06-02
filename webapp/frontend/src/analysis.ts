@@ -251,6 +251,7 @@ const kinematicsConfigGroups = [
 
 const selectConfigOptions: Record<string, string[]> = {
   "base.motion": ["Baseball-Pitching", "Baseball-Hitting", "Walking"],
+  "base.walking_direction": ["+x", "-x", "+z", "-z"],
   "lifting.interpolation": ["linear", "slinear", "quadratic", "cubic", "none"],
   "lifting.sections_to_keep": ["all", "largest", "first", "last"],
   "lifting.fill_large_gaps_with": ["last_value", "nan", "zeros"],
@@ -259,6 +260,7 @@ const selectConfigOptions: Record<string, string[]> = {
 const configFieldOrder: Record<string, string[]> = {
   base: [
     "motion",
+    "walking_direction",
     "frame_range",
   ],
   pose: [
@@ -1261,6 +1263,9 @@ function orderedConfigEntries(): Array<[string, unknown]> {
 }
 
 function renderConfigFields(prefix: string, values: Record<string, unknown>): string {
+  if (prefix === "base") {
+    return renderBaseConfigFields(values);
+  }
   if (prefix === "lifting") {
     return renderLiftingConfigFields(values);
   }
@@ -1271,6 +1276,13 @@ function renderConfigFields(prefix: string, values: Record<string, unknown>): st
     const path = `${prefix}.${key}`;
     return renderConfigField(path, key, value);
   }).join("");
+}
+
+function renderBaseConfigFields(values: Record<string, unknown>): string {
+  return orderedConfigFieldEntries("base", values)
+    .filter(([key]) => key !== "walking_direction" || values.motion === "Walking")
+    .map(([key, value]) => renderConfigField(`base.${key}`, key, value))
+    .join("");
 }
 
 function orderedConfigFieldEntries(prefix: string, values: Record<string, unknown>): Array<[string, unknown]> {
@@ -1421,8 +1433,9 @@ function renderSegmentedControl(path: string, key: string, value: string, option
 }
 
 function renderSelectControl(path: string, key: string, value: string, options: string[]): string {
+  const label = path === "base.walking_direction" ? "Walking Direction" : key;
   return `
-    <label>${key}
+    <label>${label}
       <select data-config-path="${path}">
         ${options.map((option) => `<option value="${option}" ${option === value ? "selected" : ""}>${option}</option>`).join("")}
       </select>
@@ -1502,6 +1515,9 @@ function handleConfigFormInput(event: Event): void {
   }
   config = readConfigForm();
   storeAnalysisConfig(config);
+  if (target instanceof HTMLSelectElement && target.dataset.configPath === "base.motion") {
+    renderConfigForm();
+  }
 }
 
 function handleConfigFormClick(event: MouseEvent): void {
