@@ -65,13 +65,13 @@ class JsonSettingsRepository(SettingsRepository):
 
     def get_capture_mode(self) -> str:
         data = self._read()
-        value = str(data.get("capture_mode") or "sony").lower()
-        return value if value in {"sony", "phone"} else "sony"
+        value = str(data.get("capture_mode") or "phone").lower()
+        return value if value in {"sony", "phone"} else "phone"
 
     def set_capture_mode(self, capture_mode: str) -> None:
         data = self._read()
-        value = str(capture_mode or "sony").lower()
-        data["capture_mode"] = value if value in {"sony", "phone"} else "sony"
+        value = str(capture_mode or "phone").lower()
+        data["capture_mode"] = value if value in {"sony", "phone"} else "phone"
         self._settings_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
     def get_phone_camera_count(self) -> int:
@@ -89,18 +89,18 @@ class JsonSettingsRepository(SettingsRepository):
     def get_phone_frame_rate(self) -> int:
         data = self._read()
         try:
-            value = int(data.get("phone_frame_rate", 120))
+            value = int(data.get("phone_frame_rate", 60))
         except (TypeError, ValueError):
-            return 120
-        return value if value in {30, 60, 120, 240} else 120
+            return 60
+        return value if value in {30, 60, 120, 240} else 60
 
     def set_phone_frame_rate(self, frame_rate: int) -> None:
         data = self._read()
         try:
             value = int(frame_rate)
         except (TypeError, ValueError):
-            value = 120
-        data["phone_frame_rate"] = value if value in {30, 60, 120, 240} else 120
+            value = 60
+        data["phone_frame_rate"] = value if value in {30, 60, 120, 240} else 60
         self._settings_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
     def get_phone_resolution(self) -> str:

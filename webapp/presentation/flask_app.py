@@ -87,10 +87,11 @@ def create_app():
 
     @app.post("/settings/cameras")
     def set_cameras_form():
+        current = capture_service.camera_settings()
         capture_service.configure_cameras(
-            int(request.form.get("camera_count", "1")),
-            request.form.get("ccb_url", "").strip(),
-            request.form.get("live_view_frame_rate", "low"),
+            int(request.form.get("camera_count", current["camera_count"])),
+            request.form.get("ccb_url", current["ccb_url"]).strip(),
+            request.form.get("live_view_frame_rate", current["live_view_frame_rate"]),
         )
         capture_service.configure_capture_mode(
             request.form.get("capture_mode", capture_service.camera_settings()["capture_mode"]),
@@ -296,10 +297,11 @@ def create_app():
     def api_set_camera_settings():
         data = request.get_json(silent=True) or {}
         try:
+            current = capture_service.camera_settings()
             capture_service.configure_cameras(
-                int(data.get("camera_count", 1)),
-                str(data.get("ccb_url", "")).strip(),
-                str(data.get("live_view_frame_rate", "low")).lower(),
+                int(data.get("camera_count", current["camera_count"])),
+                str(data.get("ccb_url", current["ccb_url"])).strip(),
+                str(data.get("live_view_frame_rate", current["live_view_frame_rate"])).lower(),
             )
             capture_service.configure_capture_mode(
                 str(data.get("capture_mode", capture_service.camera_settings()["capture_mode"])).lower(),
@@ -320,7 +322,7 @@ def create_app():
     def api_set_capture_mode():
         data = request.get_json(silent=True) or {}
         capture_service.configure_capture_mode(
-            str(data.get("capture_mode", "sony")).lower(),
+            str(data.get("capture_mode", "phone")).lower(),
             int(data.get("phone_camera_count", capture_service.camera_settings()["phone_camera_count"])),
             int(data.get("phone_frame_rate", capture_service.camera_settings()["phone_frame_rate"])),
             str(data.get("phone_resolution", capture_service.camera_settings()["phone_resolution"])).lower(),

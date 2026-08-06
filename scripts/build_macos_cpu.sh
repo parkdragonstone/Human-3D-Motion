@@ -21,11 +21,12 @@ if [[ ! -f "pipelines/models/normal/rtmpose_end2end.onnx" ]]; then
 fi
 
 conda run -n "$ENVIRONMENT_NAME" python -c "import openvino; print('OpenVINO:', openvino.__version__)"
-conda run -n "$ENVIRONMENT_NAME" python -c "from pipelines.poseEstimation import setup_backend_device; resolved = setup_backend_device('auto', 'auto'); assert resolved == ('openvino', 'cpu'), resolved; print('Pose backend/device:', resolved)"
+conda run -n "$ENVIRONMENT_NAME" python -c "from pipelines.poseEstimation import setup_backend_device; resolved = setup_backend_device('auto', 'auto'); assert resolved in (('onnxruntime', 'mps'), ('openvino', 'cpu')), resolved; print('Pose backend/device:', resolved)"
 
 npm install
 npm run build:ts
 
+conda run -n "$ENVIRONMENT_NAME" python scripts/fix_openvino_macos_dylibs.py
 conda run -n "$ENVIRONMENT_NAME" python packaging/create_macos_app_icon.py
 conda run -n "$ENVIRONMENT_NAME" python -m pip install "pyinstaller>=6.0"
 conda run -n "$ENVIRONMENT_NAME" python -m PyInstaller --noconfirm --clean packaging/Human3DMotion.spec

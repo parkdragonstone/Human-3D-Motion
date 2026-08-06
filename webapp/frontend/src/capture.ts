@@ -33,10 +33,6 @@ const captureActionButton = document.querySelector<HTMLButtonElement>("[data-cap
 const captureActionLabel = document.querySelector<HTMLElement>("[data-capture-action-label]");
 const recordingTimer = document.querySelector<HTMLElement>("[data-capture-recording-timer]");
 const sessionList = document.querySelector<HTMLElement>("#sessionList");
-const modeInputs = Array.from(document.querySelectorAll<HTMLInputElement>("input[name='capture_mode']"));
-const sonySettings = Array.from(document.querySelectorAll<HTMLElement>("[data-sony-setting]"));
-const phoneSettings = Array.from(document.querySelectorAll<HTMLElement>("[data-phone-setting]"));
-const phonePanel = document.querySelector<HTMLElement>("[data-phone-panel]");
 const phoneQrList = document.querySelector<HTMLElement>("#phoneQrList");
 const phoneTokenInput = document.querySelector<HTMLInputElement>("[data-phone-session-token-input]");
 let lastCameras: CameraStatus[] = [];
@@ -100,26 +96,6 @@ function renderPhonePreviewFrame(frame: PhonePreviewFrame): void {
   if (lastCameras.some((camera) => camera.label === frame.camera_label)) {
     renderCameras(lastCameras);
   }
-}
-
-function currentCaptureMode(): "sony" | "phone" {
-  return (modeInputs.find((input) => input.checked)?.value === "phone" ? "phone" : "sony");
-}
-
-function applyCaptureMode(mode: "sony" | "phone"): void {
-  sonySettings.forEach((element) => {
-    element.hidden = mode !== "sony";
-  });
-  phoneSettings.forEach((element) => {
-    element.hidden = mode !== "phone";
-  });
-  if (phonePanel) {
-    phonePanel.hidden = mode !== "phone";
-  }
-  modeInputs.forEach((input) => {
-    input.checked = input.value === mode;
-    input.closest("label")?.classList.toggle("is-active", input.value === mode);
-  });
 }
 
 function renderPhoneDraft(draft: PhoneDraft): void {
@@ -282,11 +258,6 @@ async function refreshCameras(): Promise<void> {
   setCaptureActionRecording(recording);
 }
 
-async function refreshCameraSettings(): Promise<void> {
-  const settings = await fetchJson<CameraSettings>("/api/settings/cameras");
-  applyCaptureMode(settings.capture_mode);
-}
-
 async function selectStorageRoot(): Promise<void> {
   let response = await postJson<{ storage_root: string; cancelled: boolean; manual_required?: boolean }>(
     "/api/settings/storage-root/select",
@@ -313,16 +284,12 @@ async function applyCameraSettings(): Promise<void> {
   if (!cameraSettingsForm || !cameraSettingsForm.reportValidity()) return;
   const data = new FormData(cameraSettingsForm);
   const payload = {
-    capture_mode: String(data.get("capture_mode") || currentCaptureMode()),
-    camera_count: Number(data.get("camera_count") || 1),
-    ccb_url: String(data.get("ccb_url") || ""),
-    live_view_frame_rate: String(data.get("live_view_frame_rate") || "low"),
+    capture_mode: "phone",
     phone_camera_count: Number(data.get("phone_camera_count") || 1),
-    phone_frame_rate: Number(data.get("phone_frame_rate") || 120),
+    phone_frame_rate: Number(data.get("phone_frame_rate") || 60),
     phone_resolution: String(data.get("phone_resolution") || "720"),
   };
-  const settings = await postJson<CameraSettings>("/api/settings/cameras", payload);
-  applyCaptureMode(settings.capture_mode);
+  await postJson<CameraSettings>("/api/settings/cameras", payload);
   await refreshCameras();
   await refreshPhoneDraft();
   renderState("Ready", "Camera settings applied");
@@ -495,16 +462,6 @@ sessionList?.addEventListener("click", async (event) => {
   }
 });
 
-modeInputs.forEach((input) => {
-  input.addEventListener("change", () => {
-    const mode = currentCaptureMode();
-    applyCaptureMode(mode);
-    postJson<CameraSettings>("/api/capture/mode", { capture_mode: mode })
-      .then(() => Promise.all([refreshCameras(), mode === "phone" ? refreshPhoneDraft() : Promise.resolve()]))
-      .catch(() => undefined);
-  });
-});
-
 if (window.io) {
   const socket = window.io();
   socket.on("camera_status", (payload) => renderCameras(payload as CameraStatus[]));
@@ -527,4 +484,3 @@ if (window.io) {
 
 refreshCameras().catch(() => undefined);
 refreshSessions().catch(() => undefined);
-refreshCameraSettings().catch(() => applyCaptureMode(currentCaptureMode()));

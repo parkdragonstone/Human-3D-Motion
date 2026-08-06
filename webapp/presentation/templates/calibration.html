@@ -47,36 +47,11 @@
       </div>
     </div>
     <form class="camera-settings-form" method="post" action="{{ url_for('set_cameras_form') }}" data-camera-settings-form>
-      <div class="mode-picker" data-capture-mode-picker>
-        <label class="{% if camera_settings.capture_mode == 'sony' %}is-active{% endif %}">
-          <input type="radio" name="capture_mode" value="sony" {% if camera_settings.capture_mode == "sony" %}checked{% endif %}>
-          <span>Sony CCB-WD1</span>
-        </label>
-        <label class="{% if camera_settings.capture_mode == 'phone' %}is-active{% endif %}">
-          <input type="radio" name="capture_mode" value="phone" {% if camera_settings.capture_mode == "phone" %}checked{% endif %}>
-          <span>Phone QR</span>
-        </label>
-      </div>
-      <label data-sony-setting {% if camera_settings.capture_mode != "sony" %}hidden{% endif %}>
-        Camera count
-        <input name="camera_count" type="number" min="1" max="16" value="{{ camera_settings.camera_count }}" required>
-      </label>
-      <label data-sony-setting {% if camera_settings.capture_mode != "sony" %}hidden{% endif %}>
-        CCB-WD1 control URL
-        <input name="ccb_url" value="{{ camera_settings.ccb_url }}" placeholder="http://169.254.200.200/" required>
-      </label>
-      <label data-sony-setting {% if camera_settings.capture_mode != "sony" %}hidden{% endif %}>
-        Live view frame rate
-        <select name="live_view_frame_rate">
-          <option value="low" {% if camera_settings.live_view_frame_rate == "low" %}selected{% endif %}>Low</option>
-          <option value="standard" {% if camera_settings.live_view_frame_rate == "standard" %}selected{% endif %}>Standard</option>
-        </select>
-      </label>
-      <label data-phone-setting {% if camera_settings.capture_mode != "phone" %}hidden{% endif %}>
+      <label data-phone-setting>
         Phone count
         <input name="phone_camera_count" type="number" min="1" max="16" value="{{ camera_settings.phone_camera_count }}" required>
       </label>
-      <label data-phone-setting {% if camera_settings.capture_mode != "phone" %}hidden{% endif %}>
+      <label data-phone-setting>
         Sampling rate
         <select name="phone_frame_rate">
           {% for fps in [240, 120, 60, 30] %}
@@ -84,7 +59,7 @@
           {% endfor %}
         </select>
       </label>
-      <label data-phone-setting {% if camera_settings.capture_mode != "phone" %}hidden{% endif %}>
+      <label data-phone-setting>
         Resolution
         <select name="phone_resolution">
           <option value="720" {% if camera_settings.phone_resolution == "720" %}selected{% endif %}>720</option>
@@ -93,7 +68,7 @@
       </label>
       <button class="button secondary" type="submit">Apply Camera Settings</button>
     </form>
-    <div class="phone-qr-panel" data-phone-panel {% if camera_settings.capture_mode != "phone" %}hidden{% endif %}>
+    <div class="phone-qr-panel" data-phone-panel>
       <div class="panel-copy">
         <strong>Phone capture pairing</strong>
         <span>Scan each QR code on a phone.</span>
