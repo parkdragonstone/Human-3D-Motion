@@ -384,12 +384,14 @@ def run_extrinsic_calibration_folder(
         )
         result_images = None
         try:
+            frame_index_by_camera = metadata.get("image_frame_index_by_camera")
             result_images = _save_extrinsic_scene_result_images_multi(
                 video_by_label,
                 {label: intrinsic for label, intrinsic in intrinsics_by_label.items() if intrinsic is not None},
                 image_points_by_camera,
                 object_points,
                 extrinsic,
+                frame_index_by_camera if isinstance(frame_index_by_camera, dict) else None,
             )
         except Exception:
             result_images = None

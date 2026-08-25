@@ -151,6 +151,21 @@ Demo files are available from Google Drive:
 https://drive.google.com/drive/folders/1JD7Ye4nBwJI8rVy0jvVXBtfj6-yEsI_9?usp=drive_link
 ```
 
+```text
+intrinsic calibration info
+CharucoBoard | DICT40x40 | 75 | 60 | 4 | 6
+Extrinsic Calibration Info
+Object
+0.0, 0.0, 0.0
+0.492, 0.0, 0.0
+0.0, 0.0, 0.45
+0.492, 0.0, 0.45
+0.0, 0.492, 0.0
+0.492, 0.492, 0.0
+0.0, 0.492,0.45
+0.492, 0.492, 0.45
+```
+
 Download the demo folder to a local path, then open the Analysis page and select that folder as the Analysis session root. The demo data should follow the same session filename format described below.
 
 

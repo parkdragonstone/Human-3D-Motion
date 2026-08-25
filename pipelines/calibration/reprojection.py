@@ -8,17 +8,42 @@ import numpy as np
 from .opencv import ensure_cv2
 
 
-def first_video_frame(cv2, video_path: str):
+def video_frame(cv2, video_path: str, frame_index: int = 0):
+    """Read one frame. Points were clicked on a specific frame, so draw on that one."""
     cap = cv2.VideoCapture(str(video_path))
     try:
         if not cap.isOpened():
             return None
+        if frame_index > 0:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, int(frame_index))
         ok, frame = cap.read()
+        if (not ok or frame is None) and frame_index > 0:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            ok, frame = cap.read()
         if not ok or frame is None:
             return None
         return frame
     finally:
         cap.release()
+
+
+def first_video_frame(cv2, video_path: str):
+    return video_frame(cv2, video_path, 0)
+
+
+def camera_pose(extrinsic: dict[str, Any], label: str):
+    """Locate a camera pose in the solver payload.
+
+    The multi-camera solver nests poses under ``cameras[label]``; older two-camera
+    payloads carry flat ``rvec_<label>`` keys. Reading only the flat form silently
+    produced no reprojection at all, which looked like a perfect calibration.
+    """
+    cameras = extrinsic.get("cameras")
+    if isinstance(cameras, dict):
+        entry = cameras.get(label)
+        if isinstance(entry, dict) and entry.get("rvec") is not None and entry.get("tvec") is not None:
+            return entry.get("rvec"), entry.get("tvec")
+    return extrinsic.get(f"rvec_{label}"), extrinsic.get(f"tvec_{label}")
 
 
 def draw_labeled_points(cv2, frame, points, color, title: str):
@@ -72,7 +97,7 @@ def draw_projection_overlay(cv2, frame, actual_points, projected_points, title: 
         try:
             u = int(round(float(projected.get("u"))))
             v = int(round(float(projected.get("v"))))
-        except Exception:
+        except (TypeError, ValueError):
             continue
         point_id = projected.get("id", index)
         actual = actual_map.get(str(point_id))
@@ -80,16 +105,17 @@ def draw_projection_overlay(cv2, frame, actual_points, projected_points, title: 
             try:
                 actual_u = int(round(float(actual.get("u"))))
                 actual_v = int(round(float(actual.get("v"))))
+            except (TypeError, ValueError):
+                actual_u = actual_v = None
+            if actual_u is not None:
                 cv2.line(canvas, (actual_u, actual_v), (u, v), (255, 255, 255), 1, cv2.LINE_AA)
                 cv2.circle(canvas, (actual_u, actual_v), 7, (80, 200, 80), -1, lineType=cv2.LINE_AA)
-                cv2.circle(canvas, (u, v), 8, (255, 255, 255), 2, lineType=cv2.LINE_AA)
-                cv2.putText(canvas, str(point_id), (u + 10, v - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2, cv2.LINE_AA)
-            except Exception:
-                pass
-        else:
-            cv2.circle(canvas, (u, v), 8, (255, 255, 255), 2, lineType=cv2.LINE_AA)
+        cv2.circle(canvas, (u, v), 8, (255, 255, 255), 2, lineType=cv2.LINE_AA)
+        cv2.putText(canvas, str(point_id), (u + 10, v - 10), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.55, (255, 255, 255), 2, cv2.LINE_AA)
     cv2.putText(canvas, title, (18, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (215, 255, 67), 2, cv2.LINE_AA)
-    cv2.putText(canvas, "green=clicked  white=reprojection", (18, 62), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (230, 230, 230), 1, cv2.LINE_AA)
+    cv2.putText(canvas, "green=clicked  white=reprojection", (18, 62),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (230, 230, 230), 1, cv2.LINE_AA)
     return canvas
 
 
@@ -99,6 +125,7 @@ def save_extrinsic_scene_result_images_multi(
     image_points_by_camera: dict[str, list[dict[str, Any]]],
     object_points: list[dict[str, Any]],
     extrinsic: dict[str, Any],
+    frame_index_by_camera: dict[str, int] | None = None,
 ) -> dict[str, str] | None:
     cv2 = ensure_cv2()
     result_images: dict[str, str] = {}
@@ -113,13 +140,12 @@ def save_extrinsic_scene_result_images_multi(
         return str(out_path)
 
     for label, video in video_by_label.items():
-        frame = first_video_frame(cv2, str(video))
+        frame = video_frame(cv2, str(video), int((frame_index_by_camera or {}).get(label, 0) or 0))
         points = image_points_by_camera.get(label, [])
         if frame is None:
             continue
         intrinsic = intrinsics_by_label.get(label)
-        rvec = extrinsic.get(f"rvec_{label}")
-        tvec = extrinsic.get(f"tvec_{label}")
+        rvec, tvec = camera_pose(extrinsic, label)
         reprojection = project_object_points(cv2, intrinsic, object_points, rvec, tvec) if extrinsic_ok and intrinsic else None
         if reprojection is not None:
             overlay = draw_projection_overlay(cv2, frame, points, reprojection, f"{label.upper()} REPROJECTION")

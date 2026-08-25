@@ -122,6 +122,7 @@ interface PointHistoryEntry {
 
 interface PointCanvasState {
   cameraLabel: string;
+  frameIndex: number;
   canvas: HTMLCanvasElement;
   ctx: CanvasRenderingContext2D;
   image: HTMLImageElement;
@@ -862,6 +863,7 @@ function showExtrinsicPointModal(
     const image = new Image();
     const state: PointCanvasState = {
       cameraLabel: frame.camera_label,
+      frameIndex: typeof frame.frame_index === "number" ? frame.frame_index : 0,
       canvas,
       ctx,
       image,
@@ -1139,6 +1141,9 @@ async function submitExtrinsicPointCalibration(): Promise<void> {
     image_points_by_camera: imagePointsByCamera,
     image_points_cam1: cam1?.points || [],
     image_points_cam2: cam2?.points || [],
+    image_frame_index_by_camera: Object.fromEntries(
+      session.canvases.map((state) => [state.cameraLabel, state.frameIndex]),
+    ),
   });
   showCalibrationResultModal(result);
   if (!result.ok) {
