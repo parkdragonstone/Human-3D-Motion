@@ -165,7 +165,9 @@ def _detect_charuco_frame(cv2, gray, config: dict[str, Any]) -> dict[str, Any]:
     rows = int(config.get("checker_board_rows") or 0)
     square_size_mm = float(config.get("checker_board_size_mm") or 0)
     marker_size_mm = float(config.get("marker_size_mm") or square_size_mm * 0.72)
-    if columns < 2 or rows < 2 or square_size_mm <= 0 or marker_size_mm <= 0 or marker_size_mm >= square_size_mm:
+    # Column/Row count squares for ChArUco, so the inner corners the detector returns
+    # are one fewer in each direction.
+    if columns < 3 or rows < 3 or square_size_mm <= 0 or marker_size_mm <= 0 or marker_size_mm >= square_size_mm:
         return {
             "found": False,
             "checker_board_type": "charuco",
@@ -174,7 +176,7 @@ def _detect_charuco_frame(cv2, gray, config: dict[str, Any]) -> dict[str, Any]:
         }
 
     aruco_dict = aruco_dict_from_preset(cv2, str(config.get("aruco_dictionary") or "DICT_4X4_50"))
-    board = create_charuco_board(cv2, columns + 1, rows + 1, square_size_mm, marker_size_mm, aruco_dict)
+    board = create_charuco_board(cv2, columns, rows, square_size_mm, marker_size_mm, aruco_dict)
     detector = charuco_detector(cv2, board)
     marker_detector = aruco_detector(cv2, aruco_dict)
 
@@ -209,7 +211,7 @@ def _detect_charuco_frame(cv2, gray, config: dict[str, Any]) -> dict[str, Any]:
             points.append({"id": int(marker_id) + 1, "u": float(corner[0]), "v": float(corner[1])})
 
     return {
-        "found": len(points) == columns * rows,
+        "found": len(points) == (columns - 1) * (rows - 1),
         "checker_board_type": "charuco",
         "corners": points,
         "error": None if points else "charuco_corners_not_found",

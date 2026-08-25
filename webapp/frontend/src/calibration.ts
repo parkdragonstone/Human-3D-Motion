@@ -154,6 +154,7 @@ const extrinsicChessboardFields = Array.from(document.querySelectorAll<HTMLEleme
 const extrinsicBoardType = document.querySelector<HTMLSelectElement>("[data-extrinsic-calibration-board-type]");
 const extrinsicBoardFields = Array.from(document.querySelectorAll<HTMLElement>("[data-extrinsic-board-field]"));
 const boardFields = Array.from(document.querySelectorAll<HTMLElement>("[data-board-field]"));
+const boardCountHints = Array.from(document.querySelectorAll<HTMLElement>("[data-board-count-hint]"));
 const calibrationActionButton = document.querySelector<HTMLButtonElement>("[data-calibration-action-button]");
 const calibrationActionLabel = document.querySelector<HTMLElement>("[data-calibration-action-label]");
 const calibrationRecordingTimer = document.querySelector<HTMLElement>("[data-calibration-recording-timer]");
@@ -764,7 +765,7 @@ async function openExtrinsicChessboardModal(folderName: string, detailPayload: R
   const squareSizeMm = Number(detailPayload.checker_board_size_mm || 0);
   const boardType = String(detailPayload.checker_board_type || "chessboard");
   const markerSizeMm = Number(detailPayload.marker_size_mm || 0);
-  if (columns < 2 || rows < 2 || squareSizeMm <= 0) {
+  if (columns < 3 || rows < 3 || squareSizeMm <= 0) {
     showCalibrationResultModal({ ok: false, mode: "EXTR", error: "bad_chessboard_setup" });
     return;
   }
@@ -774,7 +775,11 @@ async function openExtrinsicChessboardModal(folderName: string, detailPayload: R
   }
 
   const orientation = String(detailPayload.chessboard_orientation || "horizontal");
-  const objectPoints = chessboardObjectPoints(columns, rows, squareSizeMm, orientation);
+  // Column/Row count squares for ChArUco and inner corners for Chessboard, so the
+  // object grid the detector's corner ids index into differs by one in each direction.
+  const gridColumns = boardType === "charuco" ? columns - 1 : columns;
+  const gridRows = boardType === "charuco" ? rows - 1 : rows;
+  const objectPoints = chessboardObjectPoints(gridColumns, gridRows, squareSizeMm, orientation);
   const response = await fetchChessboardCorners(folderName, {
     checker_board_type: boardType,
     aruco_dictionary: detailPayload.aruco_dictionary,
@@ -1175,6 +1180,21 @@ function syncExtrinsicBoardFields(): void {
     const allowedTypes = String(field.dataset.extrinsicBoardField || "").split(/\s+/).filter(Boolean);
     field.hidden = target !== "chessboard" || !allowedTypes.includes(boardType);
   });
+  syncBoardCountHints();
+}
+
+function boardCountHintText(boardType: string): string {
+  return boardType === "charuco"
+    ? "ChArUco: Column and Row count squares — a 10 x 7 board is 10 by 7 squares."
+    : "Chessboard: Column and Row count inner corners — a 10 x 7 board has 9 x 6 inner corners.";
+}
+
+function syncBoardCountHints(): void {
+  const extrinsic = calibrationMode?.value === "extrinsic";
+  const boardType = (extrinsic ? extrinsicBoardType?.value : calibrationBoardType?.value) || "chessboard";
+  boardCountHints.forEach((hint) => {
+    hint.textContent = boardCountHintText(boardType);
+  });
 }
 
 function syncBoardFields(): void {
@@ -1183,6 +1203,7 @@ function syncBoardFields(): void {
     const allowedTypes = String(field.dataset.boardField || "").split(/\s+/).filter(Boolean);
     field.hidden = calibrationMode?.value === "extrinsic" || !allowedTypes.includes(boardType);
   });
+  syncBoardCountHints();
 }
 
 document.querySelector<HTMLFormElement>("[data-storage-form]")?.addEventListener("submit", (event) => {

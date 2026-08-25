@@ -176,12 +176,13 @@
         </label>
         <label data-board-field="chessboard charuco">
           Column
-          <input name="checker_board_columns" type="number" min="2" value="9">
+          <input name="checker_board_columns" type="number" min="3" value="9" data-board-count-input>
         </label>
         <label data-board-field="chessboard charuco">
           Row
-          <input name="checker_board_rows" type="number" min="2" value="6">
+          <input name="checker_board_rows" type="number" min="3" value="6" data-board-count-input>
         </label>
+        <p class="calibration-hint" data-board-field="chessboard charuco" data-board-count-hint></p>
       </div>
       <div class="calibration-grid" data-extrinsic-fields hidden>
         <div class="mode-picker calibration-target-picker" data-extrinsic-target-picker>
@@ -223,12 +224,13 @@
         </label>
         <label data-extrinsic-chessboard-fields hidden>
           Column
-          <input name="checker_board_columns" type="number" min="2" value="9">
+          <input name="checker_board_columns" type="number" min="3" value="9" data-board-count-input>
         </label>
         <label data-extrinsic-chessboard-fields hidden>
           Row
-          <input name="checker_board_rows" type="number" min="2" value="6">
+          <input name="checker_board_rows" type="number" min="3" value="6" data-board-count-input>
         </label>
+        <p class="calibration-hint" data-extrinsic-chessboard-fields data-board-count-hint hidden></p>
         <label data-extrinsic-chessboard-fields hidden>
           CheckerBoard Direction
           <select name="chessboard_orientation" data-chessboard-orientation>

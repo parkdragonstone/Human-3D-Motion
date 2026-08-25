@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 from pathlib import Path
 from typing import Any
@@ -39,6 +40,9 @@ from .opencv import ensure_cv2 as _ensure_cv2
 from .reprojection import (
     save_extrinsic_scene_result_images_multi as _save_extrinsic_scene_result_images_multi,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 def calibrate_intrinsic_from_video(
@@ -190,9 +194,11 @@ def _calibrate_chessboard_intrinsic_from_video(
             if dbg_frames is not None:
                 dbg = frame.copy()
                 try:
-                    cv2.drawChessboardCorners(dbg, pattern, corners, True)
-                except Exception:
-                    pass
+                    cv2.drawChessboardCorners(
+                        dbg, pattern, np.asarray(corners, dtype=np.float32).reshape(-1, 1, 2), True
+                    )
+                except Exception as exc:
+                    logger.warning(f"chessboard debug overlay failed: {exc}")
                 dbg_frames.append(dbg)
             used += 1
             corners_total += int(corners.shape[0])
@@ -460,7 +466,10 @@ def _calibrate_charuco_intrinsic_from_video(
     cv2 = _ensure_cv2()
     if not hasattr(cv2, "aruco"):
         return IntrinsicResult(ok=False, error="opencv_aruco_not_available")
-    if board_cols < 2 or board_rows < 2:
+    # For ChArUco, Column/Row are the number of squares (a 10x7 board is 10 by 7
+    # squares); Chessboard keeps counting inner corners. A 3x3 board is the smallest
+    # that still yields the four charuco corners matchImagePoints needs.
+    if board_cols < 3 or board_rows < 3:
         return IntrinsicResult(ok=False, error="board_size_too_small")
     if square_size_mm <= 0 or marker_size_mm <= 0 or marker_size_mm >= square_size_mm:
         return IntrinsicResult(ok=False, error="bad_charuco_size")
@@ -470,9 +479,7 @@ def _calibrate_charuco_intrinsic_from_video(
         return IntrinsicResult(ok=False, error=f"cannot_open_video: {video_path}")
 
     aruco_dict = _aruco_dict_from_preset(cv2, dictionary_name)
-    squares_x = board_cols + 1
-    squares_y = board_rows + 1
-    board = _create_charuco_board(cv2, squares_x, squares_y, square_size_mm, marker_size_mm, aruco_dict)
+    board = _create_charuco_board(cv2, board_cols, board_rows, square_size_mm, marker_size_mm, aruco_dict)
     charuco_detector = _charuco_detector(cv2, board)
     detector = _aruco_detector(cv2, aruco_dict)
     if charuco_detector is None and not hasattr(cv2.aruco, "interpolateCornersCharuco"):
@@ -526,9 +533,15 @@ def _calibrate_charuco_intrinsic_from_video(
             if debug_frames is not None:
                 dbg = frame.copy()
                 try:
-                    cv2.aruco.drawDetectedCornersCharuco(dbg, charuco_corners, charuco_ids)
-                except Exception:
-                    pass
+                    # OpenCV 5 hands back (N, 2) corners and (N,) ids, but the drawer
+                    # still asserts the (N, 1, 2) layout OpenCV 4 used.
+                    cv2.aruco.drawDetectedCornersCharuco(
+                        dbg,
+                        np.asarray(charuco_corners, dtype=np.float32).reshape(-1, 1, 2),
+                        np.asarray(charuco_ids).reshape(-1, 1),
+                    )
+                except Exception as exc:
+                    logger.warning(f"charuco debug overlay failed: {exc}")
                 debug_frames.append(dbg)
     finally:
         cap.release()
