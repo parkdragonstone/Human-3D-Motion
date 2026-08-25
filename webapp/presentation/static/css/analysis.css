@@ -114,12 +114,52 @@
   z-index: 30;
   width: 390px;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
   border-left: 1px solid var(--line);
   border-radius: 0;
   padding: 22px;
   background: var(--charcoal);
+}
+
+.analysis-settings-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.analysis-settings-toggle {
+  min-width: 62px;
+}
+
+.analysis-settings-body {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.analysis-settings-surface.is-collapsed {
+  inset: 16px 16px auto auto;
+  width: auto;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px 14px;
+  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.42);
+  background: rgba(13, 16, 19, 0.94);
+  backdrop-filter: blur(14px);
+}
+
+.analysis-settings-surface.is-collapsed .analysis-settings-title {
+  margin-bottom: 0;
+}
+
+.analysis-settings-surface.is-collapsed .analysis-settings-body,
+.analysis-settings-surface.is-collapsed [data-reset-analysis-config] {
+  display: none;
+}
+
+body.analysis-settings-collapsed .app-shell:has(.analysis-page) {
+  margin-right: 0;
 }
 
 .analysis-settings-scroll {
@@ -775,13 +815,22 @@ textarea[name="object_points"]::-webkit-scrollbar-thumb:hover {
   }
 
   .analysis-settings-surface {
-    position: static;
+    inset: 78px 16px auto auto;
+    width: min(390px, calc(100vw - 32px));
+    max-height: calc(100vh - 100px);
+    border: 1px solid var(--line);
+    border-left: 1px solid var(--line);
+    border-radius: 18px;
+    padding: 18px;
+    box-shadow: 0 26px 60px rgba(0, 0, 0, 0.46);
+    background: rgba(13, 16, 19, 0.94);
+    backdrop-filter: blur(14px);
+  }
+
+  .analysis-settings-surface.is-collapsed {
+    inset: 78px 16px auto auto;
     width: auto;
     max-height: none;
-    border-left: 0;
-    border-radius: 18px;
-    margin-top: 16px;
-    padding: 18px;
   }
 
   .analysis-video-grid.four-up {

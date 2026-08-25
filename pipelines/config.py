@@ -14,7 +14,7 @@ from typing import Optional
 
 @dataclass
 class BaseConfig:
-    motion: str = "walking"
+    motion: str = "None"   # "None" means no analysis until a motion is chosen
     walking_direction: str = "-z"
     frame_range: str = "auto"  # "auto" 또는 [start, end]; 변경하지 말 것
 
@@ -221,7 +221,7 @@ class AnalysisConfig:
                 focal_ratio=float(auto_d.get("focal_ratio", 0.9)),
             ),
             base=BaseConfig(
-                motion=base_d.get("motion", "Baseball-Pitching"),
+                motion=base_d.get("motion", "None"),
                 walking_direction=base_d.get("walking_direction", "-z"),
                 frame_range=base_d.get("frame_range", "auto"),
             ),

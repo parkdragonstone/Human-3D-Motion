@@ -148,7 +148,11 @@ const kinematicsGrid = document.querySelector<HTMLElement>("[data-kinematics-gri
 const kinematicsChart = document.querySelector<HTMLCanvasElement>("[data-kinematics-chart]");
 const kinematicsChartTitle = document.querySelector<HTMLElement>("[data-kinematics-chart-title]");
 const clearKinematicsSelectionButton = document.querySelector<HTMLButtonElement>("[data-clear-kinematics-selection]");
+const settingsSurface = document.querySelector<HTMLElement>("[data-analysis-settings-surface]");
+const settingsToggle = document.querySelector<HTMLButtonElement>("[data-analysis-settings-toggle]");
 const analysisConfigStorageKey = "human3dMotion.analysis.config";
+const settingsCollapsedStorageKey = "human3dMotion.analysis.settingsCollapsed";
+const compactLayoutQuery = window.matchMedia("(max-width: 980px)");
 
 let sessions: CaptureSession[] = [];
 let config: Record<string, unknown> = {};
@@ -216,7 +220,7 @@ const kinematicsConfigGroups = [
 ];
 
 const selectConfigOptions: Record<string, string[]> = {
-  "base.motion": ["Baseball-Pitching", "Baseball-Hitting", "Walking"],
+  "base.motion": ["None", "Baseball-Pitching", "Baseball-Hitting", "Walking"],
   "base.walking_direction": ["+x", "-x", "+z", "-z"],
   "lifting.interpolation": ["linear", "slinear", "quadratic", "cubic", "none"],
   "lifting.sections_to_keep": ["all", "largest", "first", "last"],
@@ -1204,6 +1208,48 @@ function storeAnalysisConfig(nextConfig: Record<string, unknown>): void {
     window.localStorage.setItem(analysisConfigStorageKey, JSON.stringify(nextConfig));
   } catch {
     // Keeping the in-memory config is enough when storage is unavailable.
+  }
+}
+
+function settingsCollapsedKey(compact: boolean): string {
+  return `${settingsCollapsedStorageKey}.${compact ? "compact" : "wide"}`;
+}
+
+function storedSettingsCollapsed(compact: boolean): boolean {
+  try {
+    const raw = window.localStorage.getItem(settingsCollapsedKey(compact));
+    return raw === null ? compact : raw === "1";
+  } catch {
+    // Narrow layouts start collapsed so the panel never covers the results.
+    return compact;
+  }
+}
+
+function storeSettingsCollapsed(compact: boolean, collapsed: boolean): void {
+  try {
+    window.localStorage.setItem(settingsCollapsedKey(compact), collapsed ? "1" : "0");
+  } catch {
+    // The current view still reflects the choice when storage is unavailable.
+  }
+}
+
+function applySettingsCollapsed(collapsed: boolean): void {
+  settingsSurface?.classList.toggle("is-collapsed", collapsed);
+  document.body.classList.toggle("analysis-settings-collapsed", collapsed);
+  if (settingsToggle) {
+    settingsToggle.textContent = collapsed ? "Show" : "Hide";
+    settingsToggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  }
+  redrawCanvases();
+}
+
+function redrawCanvases(): void {
+  drawPose3D();
+  drawKeypointOverlays();
+  if (selectedKinematicsSignals.size > 0) {
+    drawSelectedKinematicsChart();
+  } else {
+    clearKinematicsChart();
   }
 }
 
@@ -2316,15 +2362,7 @@ window.addEventListener("mouseup", () => {
   keypointDragTarget = null;
   keypointPanDrag = null;
 });
-window.addEventListener("resize", () => {
-  drawPose3D();
-  drawKeypointOverlays();
-  if (selectedKinematicsSignals.size > 0) {
-    drawSelectedKinematicsChart();
-  } else {
-    clearKinematicsChart();
-  }
-});
+window.addEventListener("resize", redrawCanvases);
 kinematicsTabs?.addEventListener("click", (event) => {
   const kindButton = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-kin-kind]");
   if (kindButton) {
@@ -2462,6 +2500,15 @@ runButton?.addEventListener("click", runAnalysis);
 resetConfigButton?.addEventListener("click", () => {
   resetConfigToDefault().catch((error) => log(error instanceof Error ? error.message : "Default config load failed"));
 });
+settingsToggle?.addEventListener("click", () => {
+  const collapsed = !(settingsSurface?.classList.contains("is-collapsed") ?? false);
+  storeSettingsCollapsed(compactLayoutQuery.matches, collapsed);
+  applySettingsCollapsed(collapsed);
+});
+compactLayoutQuery.addEventListener("change", (event) => {
+  applySettingsCollapsed(storedSettingsCollapsed(event.matches));
+});
+applySettingsCollapsed(storedSettingsCollapsed(compactLayoutQuery.matches));
 
 const initialSessionId = page?.dataset.initialSessionId || "";
 loadConfig().catch((error) => log(error instanceof Error ? error.message : "Config load failed"));

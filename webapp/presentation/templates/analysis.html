@@ -182,14 +182,20 @@
 <aside class="analysis-settings-surface" data-analysis-settings-surface>
   <div class="section-title analysis-settings-title">
     <div>
-      <span>06</span>
+      <span></span>
       <h2>Settings</h2>
     </div>
-    <button class="button secondary compact-button" type="button" data-reset-analysis-config>Default</button>
+    <div class="analysis-settings-actions">
+      <button class="button secondary compact-button" type="button" data-reset-analysis-config>Default</button>
+      <button class="button secondary compact-button analysis-settings-toggle" type="button"
+        aria-controls="analysisSettingsBody" aria-expanded="true" data-analysis-settings-toggle>Hide</button>
+    </div>
   </div>
-  <div class="analysis-settings-scroll">
-    <form class="analysis-config-form" data-analysis-config-form></form>
+  <div class="analysis-settings-body" id="analysisSettingsBody">
+    <div class="analysis-settings-scroll">
+      <form class="analysis-config-form" data-analysis-config-form></form>
+    </div>
+    <button class="button record analysis-run-button" type="button" data-run-analysis>Run Analysis</button>
   </div>
-  <button class="button record analysis-run-button" type="button" data-run-analysis>Run Analysis</button>
 </aside>
 {% endblock %}

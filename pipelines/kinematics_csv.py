@@ -73,12 +73,22 @@ def _prepend_subject_metadata(
     return pd.concat([metadata_df, df], axis=1)
 
 
-def _is_pitching_motion(motion: str) -> bool:
-    return motion in {"Pitching", "Baseball-Pitching"}
+def is_pitching_motion(motion: str) -> bool:
+    return str(motion).strip() in {"Pitching", "Baseball-Pitching"}
 
 
-def _is_walking_motion(motion: str) -> bool:
+def is_walking_motion(motion: str) -> bool:
     return str(motion).strip().lower() == "walking"
+
+
+# "None" (the default) means: run the pipeline through inverse kinematics and report the
+# joint angles and angular velocities only, with no movement-specific interpretation.
+def has_motion_analysis(motion: str) -> bool:
+    return is_pitching_motion(motion) or is_walking_motion(motion)
+
+
+_is_pitching_motion = is_pitching_motion
+_is_walking_motion = is_walking_motion
 
 
 def _append_pitching_parameters(

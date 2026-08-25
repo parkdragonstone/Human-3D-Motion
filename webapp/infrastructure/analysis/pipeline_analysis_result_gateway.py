@@ -184,12 +184,17 @@ class PipelineAnalysisResultGateway:
         return columns
 
     def recalculate_kinematics_event_markers(self, csv_path: str) -> list[dict[str, float | int | str]]:
+        from pipelines.kinematics_csv import is_walking_motion
         from pipelines.parameters import extract_pitching_events_from_dataframe, extract_walking_events_from_dataframe
 
         try:
             df = pd.read_csv(csv_path)
-            motion = _first_text_value(df, "motion").strip().lower()
-            if motion == "walking":
+            motion = _first_text_value(df, "motion").strip()
+            # "None" means inverse kinematics only: report the joint angles and angular
+            # velocities and nothing that interprets the movement.
+            if motion.lower() in ("", "none"):
+                return []
+            if is_walking_motion(motion):
                 walking_direction = _first_text_value(df, "walking_direction") or "-z"
                 return _walking_event_markers(extract_walking_events_from_dataframe(df, walking_direction))
             if "hand" not in df.columns:
