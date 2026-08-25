@@ -1,11 +1,29 @@
 import logging
 import os
 import socket
+import sys
 import threading
 import time
 import webbrowser
+from pathlib import Path
 
-from webapp.presentation.flask_app import create_app
+
+def _prepare_macos_bundle_working_directory() -> None:
+    # Finder launches an .app bundle with "/" as the working directory, so every relative
+    # data path (webapp_data/, recordings/) would land on the read-only root volume and
+    # kill the process before it prints anything. Windows keeps its current behaviour:
+    # double-clicking the .exe already starts in a writable directory.
+    if sys.platform != "darwin" or not getattr(sys, "frozen", False):
+        return
+    base_dir = Path(os.environ.get("HUMAN_3D_MOTION_HOME", "").strip() or Path.home() / "Documents" / "Human3DMotion")
+    base_dir = base_dir.expanduser()
+    base_dir.mkdir(parents=True, exist_ok=True)
+    os.chdir(base_dir)
+
+
+_prepare_macos_bundle_working_directory()
+
+from webapp.presentation.flask_app import create_app  # noqa: E402
 
 
 app, socketio = create_app()

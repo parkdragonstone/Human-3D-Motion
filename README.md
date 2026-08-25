@@ -117,6 +117,10 @@ It generates an `.icns` icon from `images/human-3d-motion.png` and creates:
 dist/Human3DMotion.app
 ```
 
+```text
+lsof -ti tcp:9090 | xargs kill
+```
+
 The macOS app is built locally for the architecture of the Python environment
 that runs the build. Code signing and notarization are not part of this build
 command.

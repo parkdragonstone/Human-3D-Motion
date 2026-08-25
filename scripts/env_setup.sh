@@ -26,7 +26,7 @@ conda run -n "$ENV_NAME" python -c "import openvino; print('OpenVINO:', openvino
 conda run -n "$ENV_NAME" python -c "from pipelines.poseEstimation import setup_backend_device; resolved = setup_backend_device('auto', 'auto'); assert resolved in (('onnxruntime', 'mps'), ('openvino', 'cpu')), resolved; print('Pose backend/device:', resolved)"
 
 echo "[INFO] Installing the h3dm command"
-ENV_PREFIX="$(conda run -n "$ENV_NAME" python -c "import sys; print(sys.prefix)" | tail -n 1 | tr -d '\r')"
+ENV_PREFIX="$(conda run -n "$ENV_NAME" python -c "import sys; print(sys.prefix)" | tr -d '\r' | grep -v '^[[:space:]]*$' | tail -n 1)"
 if [[ -z "$ENV_PREFIX" ]]; then
   echo "[ERROR] Could not resolve the Conda environment prefix for \"$ENV_NAME\"." >&2
   exit 1
