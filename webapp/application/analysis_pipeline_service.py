@@ -54,10 +54,7 @@ class AnalysisPipelineService:
             "hand": session.subject.hand,
         }
 
-        calibration_path, calibration_bundle = _analysis_calibration_bundle(session)
-        if calibration_path is not None:
-            config.setdefault("lifting", {})
-            config["lifting"]["camera_intrinsic_file"] = str(calibration_path)
+        _calibration_path, calibration_bundle = _analysis_calibration_bundle(session)
         if calibration_bundle:
             config["calibration"] = calibration_bundle
         return config

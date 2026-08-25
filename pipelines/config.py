@@ -14,7 +14,7 @@ from typing import Optional
 
 @dataclass
 class BaseConfig:
-    motion: str = "Baseball-Pitching"
+    motion: str = "walking"
     walking_direction: str = "-z"
     frame_range: str = "auto"  # "auto" 또는 [start, end]; 변경하지 말 것
 
@@ -38,11 +38,6 @@ class PoseConfig:
 
 @dataclass
 class LiftingConfig:
-    camera_intrinsic_file: Optional[str] = None
-    # camera calibration file 있는 경우 세팅
-    calib_frames: int = 10
-    cam1_person_idx: int = 0
-    cam2_person_idx: int = 0
     feet_on_floor: bool = True
     flip_left_right: bool = False
     
@@ -102,9 +97,21 @@ class KinematicsConfig:
 # ── 루트 설정 dataclass ────────────────────────────────────────────────────────
 
 @dataclass
+class AutoCalibrationConfig:
+    """Used only when a session has no calibration file of its own."""
+
+    frame_stride: int = 5          # sample every Nth pose frame
+    max_frames: int = 300          # upper bound on sampled frames
+    conf_threshold: float = 0.5    # minimum keypoint confidence to trust a joint
+    ba_iterations: int = 2         # bundle adjustment passes after the linear solve
+    focal_ratio: float = 0.9       # focal length seed as a fraction of image width
+
+
+@dataclass
 class AnalysisConfig:
     base: BaseConfig = field(default_factory=BaseConfig)
     pose: PoseConfig = field(default_factory=PoseConfig)
+    auto_calibration: AutoCalibrationConfig = field(default_factory=AutoCalibrationConfig)
     lifting: LiftingConfig = field(default_factory=LiftingConfig)
     filtering: FilteringConfig = field(default_factory=FilteringConfig)
     kinematics: KinematicsConfig = field(default_factory=KinematicsConfig)
@@ -132,12 +139,15 @@ class AnalysisConfig:
                 "overwrite_pose": self.pose.overwrite_pose,
                 "max_distance_px": self.pose.max_distance_px,
             },
+            "auto_calibration": {
+                "frame_stride": self.auto_calibration.frame_stride,
+                "max_frames": self.auto_calibration.max_frames,
+                "conf_threshold": self.auto_calibration.conf_threshold,
+                "ba_iterations": self.auto_calibration.ba_iterations,
+                "focal_ratio": self.auto_calibration.focal_ratio,
+            },
             "lifting": {
-                "camera_intrinsic_file": self.lifting.camera_intrinsic_file,
-                "calib_frames": self.lifting.calib_frames,
                 "flip_left_right": self.lifting.flip_left_right,
-                "cam1_person_idx": self.lifting.cam1_person_idx,
-                "cam2_person_idx": self.lifting.cam2_person_idx,
                 "feet_on_floor": self.lifting.feet_on_floor,
                 "reproj_error_threshold_triangulation": self.lifting.reproj_error_threshold_triangulation,
                 "likelihood_threshold_triangulation": self.lifting.likelihood_threshold_triangulation,
@@ -194,6 +204,7 @@ class AnalysisConfig:
         """dict에서 AnalysisConfig를 생성한다. 없는 키는 기본값으로 채운다."""
         base_d = d.get("base") or {}
         pose_d = d.get("pose") or {}
+        auto_d = d.get("auto_calibration") or {}
         lift_d = d.get("lifting") or {}
         filt_d = d.get("filtering") or {}
         kin_d = d.get("kinematics") or {}
@@ -202,6 +213,13 @@ class AnalysisConfig:
         kin_filter_d = kin_d.get("filter") or {}
 
         return cls(
+            auto_calibration=AutoCalibrationConfig(
+                frame_stride=int(auto_d.get("frame_stride", 5)),
+                max_frames=int(auto_d.get("max_frames", 300)),
+                conf_threshold=float(auto_d.get("conf_threshold", 0.5)),
+                ba_iterations=int(auto_d.get("ba_iterations", 2)),
+                focal_ratio=float(auto_d.get("focal_ratio", 0.9)),
+            ),
             base=BaseConfig(
                 motion=base_d.get("motion", "Baseball-Pitching"),
                 walking_direction=base_d.get("walking_direction", "-z"),
@@ -223,11 +241,7 @@ class AnalysisConfig:
                 max_distance_px=int(pose_d.get("max_distance_px", 150)),
             ),
             lifting=LiftingConfig(
-                camera_intrinsic_file=lift_d.get("camera_intrinsic_file"),
-                calib_frames=int(lift_d.get("calib_frames", 10)),
                 flip_left_right=bool(lift_d.get("flip_left_right", False)),
-                cam1_person_idx=int(lift_d.get("cam1_person_idx", 0)),
-                cam2_person_idx=int(lift_d.get("cam2_person_idx", 0)),
                 feet_on_floor=bool(lift_d.get("feet_on_floor", True)),
                 reproj_error_threshold_triangulation=float(lift_d.get("reproj_error_threshold_triangulation", 15)),
                 likelihood_threshold_triangulation=float(lift_d.get("likelihood_threshold_triangulation", 0.3)),

@@ -10,7 +10,6 @@ from .keypoints import (
     camera_sort_key as _camera_sort_key,
     filter_frame_numbers as _filter_frame_numbers,
     get_frame_number,
-    load_synchronized_kps,
     normalize_camera_label as _normalize_camera_label,
     person_to_keypoints as _person_to_keypoints,
     pose_json_dirs as _pose_json_dirs,
@@ -18,19 +17,6 @@ from .keypoints import (
 from ..utilities import export_to_trc
 
 logger = logging.getLogger(__name__)
-
-# =====================================================================
-# 1. Body-segment proportions used for scale estimation.
-#    Values are based on common anthropometric ratios such as David Winter's tables.
-PROPORTIONS = {
-    'upper_arm': 0.186,
-    'lower_arm': 0.146,
-    'thigh': 0.245,
-    'calf': 0.246,
-    'trunk': 0.288,
-    'shoulder_width': 0.259,
-    'pelvis_width': 0.191
-}
 
 TRC_MARKERS = [
     ("Hip", 19), ("RHip", 12), ("RKnee", 14), ("RAnkle", 16),
@@ -40,19 +26,6 @@ TRC_MARKERS = [
     ("Neck", 18), ("Head", 17), ("Nose", 0),
     ("RShoulder", 6), ("RElbow", 8), ("RWrist", 10),
     ("LShoulder", 5), ("LElbow", 7), ("LWrist", 9)
-]
-
-# Bone pairs used for scale estimation: ((joint_a, joint_b), proportion_name).
-SCALE_BONES = [
-    # Segment-length constraints.
-    ((11, 13), 'thigh'), ((12, 14), 'thigh'),         # L/R Hip -> Knee
-    ((13, 15), 'calf'), ((14, 16), 'calf'),           # L/R Knee -> Ankle
-    ((18, 19), 'trunk'),                              # Neck(18) -> Pelvis_Center(19)
-    ((5, 7), 'upper_arm'), ((6, 8), 'upper_arm'),     # L/R Shoulder -> Elbow
-    ((7, 9), 'lower_arm'), ((8, 10), 'lower_arm'),    # L/R Elbow -> Wrist
-    # Width constraints.
-    ((5, 6), 'shoulder_width'),                       # L Shoulder(5) -> R Shoulder(6)
-    ((11, 12), 'pelvis_width')                        # L Hip(11) -> R Hip(12)
 ]
 
 ## FUNCTIONS
@@ -112,44 +85,6 @@ def indices_of_first_last_non_nan_chunks(series, min_chunk_size=10, chunk_choice
     
     # Return the trimmed series
     return first_run_start, last_run_end
-
-# ---------------------------------------------------------------------
-# 1. Resolve camera intrinsics.
-#    - Prefer intrinsics from the calibration dict when present.
-#    - Fall back to approximate intrinsics derived from camera resolution.
-# ---------------------------------------------------------------------
-def camera_intrinsic_from_config(calibration, camera_intrinsic_file, RESOLUTION_CAM1, RESOLUTION_CAM2):
-    def estimate_intrinsics(width, height):
-        """Estimate approximate intrinsics from image resolution."""
-        cx, cy = width / 2.0, height / 2.0
-        fx = fy = width * 0.8
-        K = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]], dtype=np.float64)
-        return K, np.zeros(5)
-
-    # Source 1: calibration bundle.
-    if isinstance(calibration, dict):
-        # schema 1: {"intrinsic_cam1": {"camera_matrix": [...], "dist_coeffs":[...]}, "intrinsic_cam2": {...}}
-        c1 = calibration.get('intrinsic_cam1') or calibration.get('cam1') or {}
-        c2 = calibration.get('intrinsic_cam2') or calibration.get('cam2') or {}
-        K1 = np.asarray(c1.get('camera_matrix'), dtype=np.float64) if c1.get('camera_matrix') is not None else None
-        K2 = np.asarray(c2.get('camera_matrix'), dtype=np.float64) if c2.get('camera_matrix') is not None else None
-        D1 = np.asarray(c1.get('dist_coeffs'), dtype=np.float64).reshape(-1) if c1.get('dist_coeffs') is not None else None
-        D2 = np.asarray(c2.get('dist_coeffs'), dtype=np.float64).reshape(-1) if c2.get('dist_coeffs') is not None else None
-        if K1 is not None and K2 is not None:
-            if D1 is None: D1 = np.zeros(5, dtype=np.float64)
-            if D2 is None: D2 = np.zeros(5, dtype=np.float64)
-            logger.info("3D Lifting: Using calibration intrinsics from bundle.")
-            return K1, D1, K2, D2, True
-
-    # Source 2: reserved for legacy camera_intrinsic_file support.
-    _ = camera_intrinsic_file
-
-    # Source 3: approximate intrinsics from resolution.
-    K1, dist1 = estimate_intrinsics(*RESOLUTION_CAM1)
-    K2, dist2 = estimate_intrinsics(*RESOLUTION_CAM2)
-    logger.info("3D Lifting: Using approximated intrinsics from resolution (no calibration intrinsics).")
-    return K1, dist1, K2, dist2, False
-
 
 def _score_person_combination(candidate_kps, camera_labels, projection_matrices, lifting_config):
     likelihood_threshold = float(lifting_config.get('likelihood_threshold_triangulation', 0.3))
@@ -267,31 +202,6 @@ def load_synchronized_kps_multi_auto(camera_dirs, camera_labels, projection_matr
 # =====================================================================
 # 3. Build a rough 3D calibration skeleton for self-calibration.
 # =====================================================================
-def get_calibration_3d(kp1_all, kp2_all, target_height, calib_limit):
-    actual_calib = min(calib_limit, len(kp1_all))
-    p3d_raw = np.zeros((actual_calib, 26, 3))
-    
-    # Build an initial pseudo-3D skeleton from paired 2D keypoints.
-    p3d_raw[:, :, 0] = kp1_all[:actual_calib, :, 0]
-    p3d_raw[:, :, 2] = kp2_all[:actual_calib, :, 0]
-    p3d_raw[:, :, 1] = -(kp1_all[:actual_calib, :, 1] + kp2_all[:actual_calib, :, 1]) / 2.0
-    
-    # Estimate a robust scale from segment-length constraints.
-    scales = []
-    for f in range(actual_calib):
-        for (j1, j2), prop in SCALE_BONES:
-            pixel_len = np.linalg.norm(p3d_raw[f, j1] - p3d_raw[f, j2])
-            if pixel_len > 1.0:
-                scales.append((target_height * PROPORTIONS[prop]) / pixel_len)
-                
-    robust_scale = np.median(scales)
-    p3d_scaled = p3d_raw * robust_scale
-    
-    # Center coordinates around the pelvis in the first calibration frame.
-    p3d_scaled -= p3d_scaled[0, 19]
-    return p3d_scaled, actual_calib
-
-
 def _has_calibration_intrinsics(calibration):
     if not isinstance(calibration, dict):
         return False
@@ -332,26 +242,43 @@ def _has_calibration_extrinsics(calibration):
     )
 
 
+def has_full_calibration(calibration) -> bool:
+    """Public check: does this bundle carry usable intrinsics *and* extrinsics?"""
+    return _has_full_calibration(_normalize_calibration_bundle(calibration))
+
+
+def _normalize_calibration_bundle(calibration):
+    """Return the bundle with a ``cameras`` dict, synthesizing one when needed.
+
+    Older calibration files carry flat ``rvec_cam1`` / ``tvec_cam1`` / ``rvec_cam2`` /
+    ``tvec_cam2`` keys instead of a per-label ``cameras`` map. Converting them up front
+    means every calibrated scene, old or new, goes through the same multi-camera
+    triangulation with automatic person selection.
+    """
+    if not isinstance(calibration, dict):
+        return calibration
+    if isinstance(calibration.get('cameras'), dict) and calibration['cameras']:
+        return calibration
+
+    cameras = {}
+    for index in (1, 2):
+        rvec = calibration.get(f'rvec_cam{index}')
+        tvec = calibration.get(f'tvec_cam{index}')
+        if rvec is None or tvec is None:
+            continue
+        cameras[f'cam{index}'] = {'rvec': rvec, 'tvec': tvec}
+    if len(cameras) < 2:
+        return calibration
+
+    normalized = dict(calibration)
+    normalized['cameras'] = cameras
+    normalized['camera_labels'] = sorted(cameras.keys(), key=_camera_sort_key)
+    logger.info("3D Lifting: converted a legacy two-camera calibration into the cameras schema.")
+    return normalized
+
+
 def _has_full_calibration(calibration):
     return _has_calibration_intrinsics(calibration) and _has_calibration_extrinsics(calibration)
-
-
-def _projection_matrices_from_calibration(calibration, camera_intrinsic_file, RESOLUTION_CAM1, RESOLUTION_CAM2):
-    K1, dist1, K2, dist2, used_intr = camera_intrinsic_from_config(
-        calibration,
-        camera_intrinsic_file,
-        RESOLUTION_CAM1,
-        RESOLUTION_CAM2,
-    )
-    r1 = np.asarray(calibration.get('rvec_cam1'), dtype=np.float64).reshape(3, 1)
-    t1 = np.asarray(calibration.get('tvec_cam1'), dtype=np.float64).reshape(3, 1)
-    r2 = np.asarray(calibration.get('rvec_cam2'), dtype=np.float64).reshape(3, 1)
-    t2 = np.asarray(calibration.get('tvec_cam2'), dtype=np.float64).reshape(3, 1)
-    R1, _ = cv2.Rodrigues(r1)
-    R2, _ = cv2.Rodrigues(r2)
-    P1 = K1 @ np.hstack((R1, t1))
-    P2 = K2 @ np.hstack((R2, t2))
-    return P1, P2, used_intr
 
 
 def _projection_matrices_from_calibration_multi(calibration, camera_labels):
@@ -412,36 +339,6 @@ def _reprojection_error(projection_matrices, point_3d, x_points, y_points):
     return float(np.mean(errors)) if errors else np.inf
 
 
-def _triangulate_pose2sim_style(kp1_all, kp2_all, projection_matrices, lifting_config):
-    likelihood_threshold = float(lifting_config.get('likelihood_threshold_triangulation', 0.3))
-    error_threshold = float(lifting_config.get('reproj_error_threshold_triangulation', 15))
-    min_cameras = min(int(lifting_config.get('min_cameras_for_triangulation', 2)), 2)
-
-    num_frames = len(kp1_all)
-    final_3d = np.full((num_frames, 26, 3), np.nan, dtype=np.float64)
-    for f in range(num_frames):
-        for keypoint_idx in range(26):
-            x_points = np.array([kp1_all[f, keypoint_idx, 0], kp2_all[f, keypoint_idx, 0]], dtype=np.float64)
-            y_points = np.array([kp1_all[f, keypoint_idx, 1], kp2_all[f, keypoint_idx, 1]], dtype=np.float64)
-            likelihoods = np.array([kp1_all[f, keypoint_idx, 2], kp2_all[f, keypoint_idx, 2]], dtype=np.float64)
-            valid = (
-                np.isfinite(x_points)
-                & np.isfinite(y_points)
-                & np.isfinite(likelihoods)
-                & (likelihoods >= likelihood_threshold)
-            )
-            if int(np.count_nonzero(valid)) < min_cameras:
-                continue
-            projection_subset = [P for P, keep in zip(projection_matrices, valid) if keep]
-            point_3d = _weighted_triangulation(projection_subset, x_points[valid], y_points[valid], likelihoods[valid])
-            if not np.isfinite(point_3d).all():
-                continue
-            error = _reprojection_error(projection_subset, point_3d, x_points[valid], y_points[valid])
-            if error <= error_threshold:
-                final_3d[f, keypoint_idx] = point_3d
-    return final_3d
-
-
 def _triangulate_pose2sim_style_multi(kps_by_camera, camera_labels, projection_matrices, lifting_config):
     likelihood_threshold = float(lifting_config.get('likelihood_threshold_triangulation', 0.3))
     error_threshold = float(lifting_config.get('reproj_error_threshold_triangulation', 15))
@@ -472,95 +369,6 @@ def _triangulate_pose2sim_style_multi(kps_by_camera, camera_labels, projection_m
     return final_3d
 
 
-def triangulate_all_frames(kp1_all, kp2_all, obj_points_3d, actual_calib,
-                           camera_intrinsic_file, RESOLUTION_CAM1, RESOLUTION_CAM2,
-                           calibration=None, lifting_config=None):
-    # Resolve intrinsics and projection matrices.
-    lifting_config = lifting_config or {}
-
-    if _has_full_calibration(calibration):
-        P1, P2, used_intr = _projection_matrices_from_calibration(
-            calibration,
-            camera_intrinsic_file,
-            RESOLUTION_CAM1,
-            RESOLUTION_CAM2,
-        )
-        logger.info(
-            f"3D Lifting: Using Pose2Sim-style weighted triangulation with full calibration. "
-            f"Intrinsics from bundle={used_intr}."
-        )
-        return _triangulate_pose2sim_style(kp1_all, kp2_all, [P1, P2], lifting_config)
-
-    K1, dist1, K2, dist2, used_intr = camera_intrinsic_from_config(calibration, camera_intrinsic_file, RESOLUTION_CAM1, RESOLUTION_CAM2)
-
-    # Resolve extrinsics: use calibration bundle when complete, otherwise self-PnP.
-    use_calib_extr = False
-    R1 = None
-    t1 = None
-    R2 = None
-    t2 = None
-
-    if _has_full_calibration(calibration):
-        # Source A: camera rvec/tvec from the calibration bundle.
-        r1 = calibration.get('rvec_cam1'); t1o = calibration.get('tvec_cam1')
-        r2 = calibration.get('rvec_cam2'); t2o = calibration.get('tvec_cam2')
-        
-        r1 = np.asarray(r1, dtype=np.float64).reshape(3, 1)
-        t1o = np.asarray(t1o, dtype=np.float64).reshape(3, 1)
-        r2 = np.asarray(r2, dtype=np.float64).reshape(3, 1)
-        t2o = np.asarray(t2o, dtype=np.float64).reshape(3, 1)
-        R1, _ = cv2.Rodrigues(r1)
-        R2, _ = cv2.Rodrigues(r2)
-        t1, t2 = t1o, t2o
-        use_calib_extr = True
-
-    if use_calib_extr:
-        if R1 is None or t1 is None or R2 is None or t2 is None:
-            raise ValueError("calibration extrinsic incomplete")
-        P1 = K1 @ np.hstack((R1, t1))
-        P2 = K2 @ np.hstack((R2, t2))
-        logger.info(
-            f"3D Lifting: Using calibration extrinsics (bundle). "
-            f"Intrinsics from bundle={used_intr}."
-        )
-    else:
-        # Self-PnP: estimate camera poses from the rough 3D skeleton and 2D detections.
-        obj_pts, img_pts1, img_pts2 = [], [], []
-        for f in range(actual_calib):
-            for i in range(26):
-                if kp1_all[f, i, 2] > 0.1 and kp2_all[f, i, 2] > 0.1:
-                    obj_pts.append(obj_points_3d[f, i])
-                    img_pts1.append(kp1_all[f, i, :2])
-                    img_pts2.append(kp2_all[f, i, :2])
-        obj_pts = np.array(obj_pts, dtype=np.float32)
-        img_pts1 = np.array(img_pts1, dtype=np.float32)
-        img_pts2 = np.array(img_pts2, dtype=np.float32)
-
-        ret1, rvec1, tvec1 = cv2.solvePnP(obj_pts, img_pts1, K1, dist1, flags=cv2.SOLVEPNP_ITERATIVE)
-        R1, _ = cv2.Rodrigues(rvec1)
-        P1 = K1 @ np.hstack((R1, tvec1))
-
-        ret2, rvec2, tvec2 = cv2.solvePnP(obj_pts, img_pts2, K2, dist2, flags=cv2.SOLVEPNP_ITERATIVE)
-        R2, _ = cv2.Rodrigues(rvec2)
-        P2 = K2 @ np.hstack((R2, tvec2))
-        logger.info(f"3D Lifting: Using key-based self-PnP extrinsics (Cam1={ret1}, Cam2={ret2}). Intrinsics from bundle={used_intr}.")
-
-    # Triangulate every frame.
-    num_frames = len(kp1_all)
-    final_3d = np.zeros((num_frames, 26, 3))
-    
-    for f in range(num_frames):
-        pts1 = kp1_all[f, :, :2].T # (2, 26)
-        pts2 = kp2_all[f, :, :2].T # (2, 26)
-        
-        # OpenCV returns homogeneous 4D coordinates.
-        pts4d = cv2.triangulatePoints(P1, P2, pts1, pts2)
-        
-        # Convert homogeneous coordinates (X, Y, Z, W) to 3D coordinates.
-        pts3d = pts4d[:3, :] / pts4d[3, :] 
-        final_3d[f] = pts3d.T
-    return final_3d
-            
 # =====================================================================
 # Pipeline entry point.
 # =====================================================================
@@ -578,102 +386,74 @@ def run_3d_lifting(config, emit_log=None):
     fps = config.get('base').get('fps')
     frame_range = config.get('base').get('frame_range')
     flip_left_right = config.get('lifting', {}).get('flip_left_right', True)
-    calibration_bundle = config.get('calibration', None)
-    use_bundle = _has_full_calibration(calibration_bundle)
-
-    if use_bundle and isinstance(calibration_bundle.get('cameras'), dict):
-        camera_dirs = _pose_json_dirs(project_dir)
-        calibrated_labels = sorted(
-            {_normalize_camera_label(label) for label in calibration_bundle.get('cameras', {}).keys()},
-            key=_camera_sort_key,
-        )
-        camera_labels = [label for label in calibrated_labels if label in camera_dirs]
-        projection_data = _projection_matrices_from_calibration_multi(calibration_bundle, camera_labels)
-        if projection_data is None:
-            logger.error("3D Lifting: full calibration was provided, but fewer than two calibrated pose cameras were found.")
-            return False, None
-        camera_labels, projection_matrices = projection_data
-        _log(
-            "3D Lifting: using calibrated cameras with automatic reprojection-error person selection: "
-            + ", ".join(camera_labels)
-        )
-        kps_by_camera, valid_frames, selection_stats = load_synchronized_kps_multi_auto(
-            {label: camera_dirs[label] for label in camera_labels},
-            camera_labels,
-            projection_matrices,
-            config.get('lifting', {}),
-            frame_range=frame_range,
-        )
-        if len(valid_frames) == 0:
-            logger.error("3D Lifting: no synchronized pose frames found for calibrated cameras.")
-            return False, None
-        _log(
-            "3D Lifting person selection: "
-            f"selected={selection_stats['frames_selected']}/{selection_stats['frames_considered']} "
-            f"mean_reprojection_error_px={selection_stats['mean_reprojection_error_px']}"
+    calibration_bundle = _normalize_calibration_bundle(config.get('calibration', None))
+    if not _has_full_calibration(calibration_bundle):
+        # The analysis runner calibrates automatically when a session has no file, so
+        # reaching here means that step was skipped or produced an unusable bundle.
+        logger.error(
+            "3D Lifting: a complete camera calibration (intrinsics + extrinsics) is required."
         )
         _log(
-            f"3D Lifting triangulation: frames={len(valid_frames)} "
-            f"cameras={len(camera_labels)} use_bundle=True"
+            "3D Lifting: calibration missing or incomplete.",
+            "error",
         )
-        final_3d_frames = _triangulate_pose2sim_style_multi(
-            kps_by_camera,
-            camera_labels,
-            projection_matrices,
-            config.get('lifting', {}),
-        )
-    else:
-        cam1_json_dir = os.path.join(project_dir, 'pose', 'cam1_json')
-        cam2_json_dir = os.path.join(project_dir, 'pose', 'cam2_json')
-        camera_intrinsic_file = config.get('lifting').get('camera_intrinsic_file')
-        calib_frames = int(config.get('lifting').get('calib_frames'))
-        cam1_person_idx = int(config.get('lifting', {}).get('cam1_person_idx', 0))
-        cam2_person_idx = int(config.get('lifting', {}).get('cam2_person_idx', 0))
-        resolution_cam1 = config.get('base').get('resolution_cam1')
-        resolution_cam2 = config.get('base').get('resolution_cam2')
-        height = float(config.get('subject').get('height'))
+        return False, None
 
-        _log(
-            "3D Lifting: selecting "
-            f"cam1 people[{cam1_person_idx}] and cam2 people[{cam2_person_idx}] "
-        )
-        kp1_list, kp2_list, valid_frames = load_synchronized_kps(
-            cam1_json_dir,
-            cam2_json_dir,
-            cam1_person_idx=cam1_person_idx,
-            cam2_person_idx=cam2_person_idx,
-            frame_range=frame_range,
-        )
-        if len(valid_frames) == 0:
-            logger.error("3D Lifting: no synchronized pose frames found.")
-            return False, None
+    if not isinstance(calibration_bundle.get('cameras'), dict):
+        logger.error("3D Lifting: the calibration bundle has no per-camera extrinsics.")
+        _log("3D Lifting: the calibration bundle has no per-camera extrinsics.", "error")
+        return False, None
 
-        if use_bundle:
-            _log("3D Lifting: calibration extrinsics detected; skipping self-calibration.")
-            obj_points_calib = np.zeros((1, 26, 3), dtype=np.float64)
-            actual_calib = 0
-        else:
-            _log(f"3D Lifting: estimating self-calibration from {calib_frames} frames.")
-            obj_points_calib, actual_calib = get_calibration_3d(kp1_list, kp2_list, height, calib_frames)
-            _log(f"3D Lifting self-calibration source frames: {valid_frames[:actual_calib]}")
+    camera_dirs = _pose_json_dirs(project_dir)
+    calibrated_labels = sorted(
+        {_normalize_camera_label(label) for label in calibration_bundle.get('cameras', {}).keys()},
+        key=_camera_sort_key,
+    )
+    camera_labels = [label for label in calibrated_labels if label in camera_dirs]
+    projection_data = _projection_matrices_from_calibration_multi(calibration_bundle, camera_labels)
+    if projection_data is None:
+        logger.error("3D Lifting: full calibration was provided, but fewer than two calibrated pose cameras were found.")
+        return False, None
+    camera_labels, projection_matrices = projection_data
+    _log(
+        "3D Lifting: using calibrated cameras with automatic reprojection-error person selection: "
+        + ", ".join(camera_labels)
+    )
+    kps_by_camera, valid_frames, selection_stats = load_synchronized_kps_multi_auto(
+        {label: camera_dirs[label] for label in camera_labels},
+        camera_labels,
+        projection_matrices,
+        config.get('lifting', {}),
+        frame_range=frame_range,
+    )
+    if len(valid_frames) == 0:
+        logger.error("3D Lifting: no synchronized pose frames found for calibrated cameras.")
+        return False, None
+    _log(
+        "3D Lifting person selection: "
+        f"selected={selection_stats['frames_selected']}/{selection_stats['frames_considered']} "
+        f"mean_reprojection_error_px={selection_stats['mean_reprojection_error_px']}"
+    )
+    _log(
+        f"3D Lifting triangulation: frames={len(valid_frames)} "
+        f"cameras={len(camera_labels)}"
+    )
+    final_3d_frames = _triangulate_pose2sim_style_multi(
+        kps_by_camera,
+        camera_labels,
+        projection_matrices,
+        config.get('lifting', {}),
+    )
 
-        _log(f"3D Lifting triangulation: frames={len(valid_frames)} use_bundle={use_bundle}")
-        final_3d_frames = triangulate_all_frames(
-            kp1_list, kp2_list, obj_points_calib, actual_calib,
-            camera_intrinsic_file, resolution_cam1, resolution_cam2,
-            calibration=calibration_bundle,
-            lifting_config=config.get('lifting', {}),
+    # Calibration world frames are Z-up (a board lying flat on the floor spans X/Y);
+    # OpenSim wants Y-up, so (x, y, z) -> (x, z, -y).
+    try:
+        remapped = final_3d_frames
+        final_3d_frames = np.stack(
+            [remapped[:, :, 0], remapped[:, :, 2], -remapped[:, :, 1]], axis=2
         )
-
-    if use_bundle:
-        try:
-            old = final_3d_frames
-            new_x = old[:, :, 0]
-            new_y = old[:, :, 2]
-            new_z = -old[:, :, 1]
-            final_3d_frames = np.stack([new_x, new_y, new_z], axis=2)
-        except Exception as e:
-            logger.warning(f"3D Lifting: axis remap failed: {e}")
+    except Exception as exc:
+        logger.warning(f"3D Lifting: axis remap failed: {exc}")
 
     if flip_left_right:
         final_3d_frames[:, :, 0] *= -1
@@ -692,11 +472,9 @@ def run_3d_lifting(config, emit_log=None):
     )
 
     trc_filename = os.path.join(pose3d_dir, "keypoints_3d.trc")
-    out_unit = 'cm'
-    if use_bundle:
-        out_unit = calibration_bundle.get('object_points_unit_used') or 'm'
-        if out_unit not in ('mm', 'cm', 'm'):
-            out_unit = 'm'
+    out_unit = calibration_bundle.get('object_points_unit_used') or 'm'
+    if out_unit not in ('mm', 'cm', 'm'):
+        out_unit = 'm'
     export_to_trc(trc_filename, final_3d_frames, valid_frames, fps, TRC_MARKERS, out_unit=out_unit)
     _log(f"3D Lifting complete. TRC saved: {trc_filename}")
     return True, trc_filename

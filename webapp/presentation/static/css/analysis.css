@@ -497,17 +497,25 @@ textarea[name="object_points"]::-webkit-scrollbar-thumb:hover {
   gap: 7px;
 }
 
+/* Nested config objects (Filtering > butterworth, hampel, ...) get the same boxed
+   treatment as the Kinematics mode groups so each filter reads as its own section. */
 .analysis-config-subgroup {
   grid-column: 1 / -1;
   display: grid;
   grid-template-columns: 1fr;
   gap: 7px;
+  border: 1px solid rgba(202, 255, 39, 0.2);
+  border-radius: 8px;
+  padding: 9px;
+  background: rgba(202, 255, 39, 0.03);
 }
 
 .analysis-config-subgroup > strong {
   grid-column: 1 / -1;
-  color: var(--ink);
+  color: var(--acid);
   font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
 }
 
 .analysis-config-mode-group {

@@ -7,8 +7,24 @@
 
 .calibration-target-picker,
 [data-extrinsic-object-fields],
+.calibration-hint,
 .intrinsic-upload-field {
   grid-column: 1 / -1;
+}
+
+/* .mode-picker is a fixed 2-column grid; this picker has three options and must stay
+   on one row, so lay it out by column count instead. */
+.calibration-target-picker {
+  grid-template-columns: none;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+}
+
+.calibration-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  opacity: 0.72;
 }
 
 [data-extrinsic-object-fields] textarea {

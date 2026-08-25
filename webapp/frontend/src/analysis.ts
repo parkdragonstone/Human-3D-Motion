@@ -192,52 +192,18 @@ const lowerBodySwapPairs = [[11, 12], [13, 14], [15, 16], [20, 21], [22, 23], [2
 const upperBodySwapPairs = [[5, 6], [7, 8], [9, 10]];
 let kinematicsHoverX: number | null = null;
 let kinematicsChartScrubbing = false;
-const configSectionOrder = ["base", "pose", "lifting", "filtering", "kinematics"];
+const configSectionOrder = ["base", "pose", "auto_calibration", "lifting", "filtering", "kinematics"];
 const hiddenConfigPaths = new Set([
   "pose.backend",
   "pose.det_nms",
   "pose.device",
   "pose.output_format",
   "pose.save_video",
-  "lifting.camera_intrinsic_file",
   "lifting.remove_incomplete_frames",
   "lifting.show_interp_indices",
   "kinematics.remove_individual_ik_setup",
   "kinematics.remove_individual_scaling_setup",
 ]);
-
-const liftingConfigGroups = [
-  {
-    title: "Calibration File",
-    paths: [
-      "reproj_error_threshold_triangulation",
-      "likelihood_threshold_triangulation",
-      "min_cameras_for_triangulation",
-    ],
-  },
-  {
-    title: "No Calibration File",
-    paths: [
-      "calib_frames",
-      "cam1_person_idx",
-      "cam2_person_idx",
-    ],
-  },
-  {
-    title: "Common",
-    paths: [
-      "feet_on_floor",
-      "flip_left_right",
-      "max_distance_m",
-      "max_unseen_frames",
-      "interp_if_gap_smaller_than",
-      "interpolation",
-      "sections_to_keep",
-      "min_chunk_size",
-      "fill_large_gaps_with",
-    ],
-  },
-];
 
 const kinematicsConfigGroups = [
   {
@@ -258,6 +224,20 @@ const selectConfigOptions: Record<string, string[]> = {
 };
 
 const configFieldOrder: Record<string, string[]> = {
+  lifting: [
+    "reproj_error_threshold_triangulation",
+    "likelihood_threshold_triangulation",
+    "min_cameras_for_triangulation",
+    "feet_on_floor",
+    "flip_left_right",
+    "max_distance_m",
+    "max_unseen_frames",
+    "interp_if_gap_smaller_than",
+    "interpolation",
+    "sections_to_keep",
+    "min_chunk_size",
+    "fill_large_gaps_with",
+  ],
   base: [
     "motion",
     "walking_direction",
@@ -1244,6 +1224,10 @@ function mergeConfig(baseConfig: Record<string, unknown>, storedConfig: Record<s
 
 function mergeConfigObject(target: Record<string, unknown>, source: Record<string, unknown>): void {
   Object.entries(source).forEach(([key, value]) => {
+    // Stored entries are overrides for settings that still exist. A key the current
+    // config no longer defines is left over from an older version, and copying it back
+    // would resurrect a removed setting in the form.
+    if (!Object.prototype.hasOwnProperty.call(target, key)) return;
     if (isObject(value) && isObject(target[key])) {
       mergeConfigObject(target[key] as Record<string, unknown>, value);
       return;
@@ -1265,9 +1249,6 @@ function orderedConfigEntries(): Array<[string, unknown]> {
 function renderConfigFields(prefix: string, values: Record<string, unknown>): string {
   if (prefix === "base") {
     return renderBaseConfigFields(values);
-  }
-  if (prefix === "lifting") {
-    return renderLiftingConfigFields(values);
   }
   if (prefix === "kinematics") {
     return renderKinematicsConfigFields(values);
@@ -1295,27 +1276,6 @@ function orderedConfigFieldEntries(prefix: string, values: Record<string, unknow
     .map((key) => [key, entryMap.get(key)] as [string, unknown]);
   const remaining = entries.filter(([key]) => !preferred.includes(key));
   return [...ordered, ...remaining];
-}
-
-function renderLiftingConfigFields(values: Record<string, unknown>): string {
-  const groupedKeys = new Set(liftingConfigGroups.flatMap((group) => group.paths));
-  const groups = liftingConfigGroups.map((group) => {
-    const fields = group.paths
-      .map((key) => renderConfigField(`lifting.${key}`, key, values[key]))
-      .join("");
-    if (!fields.trim()) return "";
-    return `
-      <div class="analysis-config-mode-group">
-        <strong>${group.title}</strong>
-        <div class="analysis-config-grid">${fields}</div>
-      </div>
-    `;
-  });
-  const remaining = Object.entries(values)
-    .filter(([key]) => !groupedKeys.has(key))
-    .map(([key, value]) => renderConfigField(`lifting.${key}`, key, value))
-    .join("");
-  return [...groups, remaining].join("");
 }
 
 function renderKinematicsConfigFields(values: Record<string, unknown>): string {
