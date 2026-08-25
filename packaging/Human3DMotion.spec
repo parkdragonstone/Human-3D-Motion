@@ -16,7 +16,13 @@ datas = [
     (str(repo_root / "pipelines" / "models"), "pipelines/models"),
     (str(repo_root / "images"), "images"),
 ]
-binaries = collect_dynamic_libs("opensim") + collect_dynamic_libs("onnxruntime")
+# OpenVINO loads its frontends (.onnx) and device plugins from openvino/libs at runtime,
+# and PyInstaller only follows the few of those DLLs that the Python extensions link against.
+binaries = (
+    collect_dynamic_libs("opensim")
+    + collect_dynamic_libs("onnxruntime")
+    + collect_dynamic_libs("openvino")
+)
 hiddenimports = (
     collect_submodules("flask_socketio")
     + collect_submodules("engineio")
