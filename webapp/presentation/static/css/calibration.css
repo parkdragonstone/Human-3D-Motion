@@ -193,3 +193,21 @@
     transform: rotate(360deg);
   }
 }
+
+/* Project name sits beside the calibration target so both are set in one row. */
+.calibration-project-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: end;
+}
+
+.calibration-project-row > * {
+  min-width: 0;
+}
+
+@media (max-width: 980px) {
+  .calibration-project-row {
+    grid-template-columns: 1fr;
+  }
+}

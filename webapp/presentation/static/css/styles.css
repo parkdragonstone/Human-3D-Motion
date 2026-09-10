@@ -352,6 +352,27 @@ input[type="range"] {
   min-width: 0;
 }
 
+.list-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.list-pager .button[disabled] {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.list-pager-status {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--muted, #85857e);
+  min-width: 56px;
+  text-align: center;
+}
+
 .intrinsic-upload-field {
   align-self: stretch;
 }

@@ -13,7 +13,9 @@ dependencies:
       - pyopenssl>=23.0.0
       - numpy>=1.24.0
       - scipy>=1.11.0
-      - ultralytics>=8.0.0
+      - matplotlib>=3.7.0
+      - tqdm>=4.65.0
+      - torch>=2.0.0
       - rtmlib>=0.0.13
       - opencv-python>=4.12.0.0
       - onnxruntime>=1.23.0

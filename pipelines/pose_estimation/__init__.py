@@ -44,8 +44,6 @@ def run_poseEstimation(config, emit_log=None):
     mode = pose_config.get("mode")
     pose_dir = os.path.join(project_dir, "pose")
     det_score_threshold = pose_config.get("det_score_threshold")
-    det_iou = pose_config.get("det_iou")
-    det_nms = pose_config.get("det_nms")
     keypoint_likelihood_threshold = pose_config.get("keypoint_likelihood_threshold")
     average_likelihood_threshold = pose_config.get("average_likelihood_threshold")
     keypoint_number_threshold = pose_config.get("keypoint_number_threshold")
@@ -96,9 +94,8 @@ def run_poseEstimation(config, emit_log=None):
     detector, detector_cfg = setup_detector(
         device=device,
         det_score_threshold=det_score_threshold,
-        det_iou=det_iou,
-        det_nms=det_nms,
         mode=mode,
+        backend=backend,
     )
     detect_model = wrapping_detector(detector, detector_cfg)
     pose_solver = setup_pose_solver(mode=mode, backend=backend, device=device)

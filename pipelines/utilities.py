@@ -6,7 +6,7 @@
 """
 from .utils.video_utils import (  # noqa: F401
     HALPE26_SKELETON_PAIRS,
-    KEYPOINT_COLORS,
+    keypoint_side_color,
     colors,
     thickness,
     _open_mp4_writer_browser_safe,
@@ -31,7 +31,7 @@ from .utils.biomechanics import (  # noqa: F401
 
 __all__ = [
     "HALPE26_SKELETON_PAIRS",
-    "KEYPOINT_COLORS",
+    "keypoint_side_color",
     "colors",
     "thickness",
     "_open_mp4_writer_browser_safe",

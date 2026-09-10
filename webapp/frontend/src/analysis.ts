@@ -110,6 +110,8 @@ const page = document.querySelector<HTMLElement>(".analysis-page, .results-page,
 const rootInput = document.querySelector<HTMLInputElement>("#analysisRootInput");
 const selectRootButton = document.querySelector<HTMLButtonElement>("[data-select-analysis-root]");
 const sessionSelect = document.querySelector<HTMLSelectElement>("[data-analysis-session-select]");
+// 세션 하나가 아니라 전체를 순차 처리한다는 뜻의 특수 값.
+const BATCH_ALL_VALUE = "__all__";
 const videoGrid = document.querySelector<HTMLElement>("[data-analysis-video-grid]");
 const metaSessionChip = document.querySelector<HTMLElement>("[data-analysis-meta-session]");
 const metaVideosChip = document.querySelector<HTMLElement>("[data-analysis-meta-videos]");
@@ -196,10 +198,13 @@ const selectedKinematicsSignals = new Set<string>();
 const kinematicsTimeseriesCache = new Map<string, KinematicsTimeseries>();
 const kinematicsChartColors = ["#2f3f5c", "#a4483c", "#5c7a5e", "#8a6d3b", "#6b5b95", "#3d7076"];
 const kinematicsChartHeight = 320;
+// pipelines/utils/video_utils.py 의 HALPE26_SKELETON_PAIRS 와 같은 순서/구성.
+// 2D 오버레이 영상과 이 에디터가 같은 골격을 보여야 한다.
 const keypointSkeletonPairs = [
-  [0, 17], [18, 17], [18, 19], [18, 5], [18, 6], [5, 7], [7, 9], [6, 8], [8, 10],
-  [19, 11], [19, 12], [11, 13], [13, 15], [12, 14], [14, 16], [15, 20], [20, 22],
-  [15, 24], [16, 21], [21, 23], [16, 25],
+  [18, 0], [0, 17], [0, 1], [0, 2], [1, 3], [2, 4],
+  [18, 19], [18, 5], [18, 6], [5, 7], [7, 9], [6, 8], [8, 10],
+  [19, 11], [19, 12], [11, 13], [13, 15], [12, 14], [14, 16],
+  [15, 20], [20, 22], [15, 24], [16, 21], [21, 23], [16, 25],
 ];
 const lowerBodySwapPairs = [[11, 12], [13, 14], [15, 16], [20, 21], [22, 23], [24, 25]];
 const upperBodySwapPairs = [[5, 6], [7, 8], [9, 10]];
@@ -208,14 +213,19 @@ let kinematicsChartScrubbing = false;
 const configSectionOrder = ["base", "pose", "auto_calibration", "lifting", "filtering", "kinematics"];
 const hiddenConfigPaths = new Set([
   "pose.backend",
-  "pose.det_nms",
   "pose.device",
+  // Only one model tier ships, so there is nothing for the operator to pick.
+  "pose.mode",
   "pose.output_format",
   "pose.save_video",
   "lifting.remove_incomplete_frames",
   "lifting.show_interp_indices",
   "kinematics.remove_individual_ik_setup",
   "kinematics.remove_individual_scaling_setup",
+  // 항상 같은 값으로 쓰는 항목들. config 에는 남기되 조작 대상에서는 뺀다.
+  "kinematics.use_simple_model",
+  "kinematics.use_augmentation",
+  "kinematics.right_left_symmetry",
 ]);
 
 const kinematicsConfigGroups = [
@@ -253,19 +263,14 @@ const configFieldOrder: Record<string, string[]> = {
     "frame_range",
   ],
   pose: [
-    "mode",
     "overwrite_pose",
     "det_score_threshold",
-    "det_iou",
     "keypoint_likelihood_threshold",
     "average_likelihood_threshold",
     "keypoint_number_threshold",
     "max_distance_px",
   ],
   kinematics: [
-    "use_simple_model",
-    "use_augmentation",
-    "right_left_symmetry",
     "fastest_frames_to_remove_percent",
     "close_to_zero_speed_m",
     "large_hip_knee_angles",
@@ -319,6 +324,9 @@ interface GaitParameter {
   side: string | null;
   value: number | null;
   unit: string;
+  // ROM 카드에만 실린다. 예전 CSV 를 읽으면 없을 수 있다.
+  value_min?: number | null;
+  value_max?: number | null;
 }
 
 interface GaitParameterResult {
@@ -334,8 +342,15 @@ const gaitParameterGroups: Array<{ title: string; keys: string[] }> = [
   { title: "Walking Path", keys: ["path_heading", "path_confidence", "path_distance"] },
   { title: "Spatiotemporal", keys: ["gait_speed", "cadence", "steps", "duration"] },
   { title: "Step Geometry", keys: ["stride_length", "step_length", "step_width", "stride_time"] },
-  { title: "Cycle Phase", keys: ["stance_phase", "swing_phase", "double_support"] },
-  { title: "Kinematics", keys: ["peak_knee_flexion", "knee_rom", "hip_rom", "ankle_rom", "trunk_lean", "pelvic_obliquity"] },
+  { title: "Cycle Phase", keys: ["stance_phase", "swing_phase", "single_support", "double_support"] },
+  {
+    title: "Kinematics",
+    keys: [
+      "knee_rom", "hip_rom", "hip_adduction_rom", "hip_rotation_rom", "ankle_rom",
+      "pelvic_obliquity", "pelvic_rotation", "trunk_lean", "trunk_rotation",
+      "hip_shoulder_forward", "hip_shoulder_lateral", "hip_shoulder_rotation",
+    ],
+  },
 ];
 
 function renderGaitParameters(result: GaitParameterResult | null): void {
@@ -366,14 +381,30 @@ function renderGaitParameters(result: GaitParameterResult | null): void {
       <section class="gait-parameter-group">
         <h3>${group.title}</h3>
         <div class="gait-parameter-grid">
-          ${group.entries.map(renderGaitParameterCard).join("")}
+          ${group.entries.map((entry) => renderGaitParameterCard(entry, gaitRangeAxis(group.entries))).join("")}
         </div>
       </section>
     `)
     .join("");
 }
 
-function renderGaitParameterCard(item: GaitParameter): string {
+type GaitRangeAxis = { min: number; max: number } | null;
+
+/** Shared scale for a group so each card's span is comparable to its neighbours. */
+function gaitRangeAxis(entries: GaitParameter[]): GaitRangeAxis {
+  const bounds = entries
+    .filter((entry) => isFiniteNumber(entry.value_min) && isFiniteNumber(entry.value_max));
+  if (bounds.length === 0) return null;
+  const min = Math.min(...bounds.map((entry) => entry.value_min as number));
+  const max = Math.max(...bounds.map((entry) => entry.value_max as number));
+  return max > min ? { min, max } : null;
+}
+
+function isFiniteNumber(value: number | null | undefined): boolean {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function renderGaitParameterCard(item: GaitParameter, axis: GaitRangeAxis): string {
   const side = item.side ? `<small>${item.side}</small>` : "";
   return `
     <article class="gait-parameter-card">
@@ -382,7 +413,40 @@ function renderGaitParameterCard(item: GaitParameter): string {
         ${side}
       </header>
       <strong>${formatGaitValue(item.value)}<em>${item.unit || ""}</em></strong>
+      ${renderGaitRange(item, axis)}
     </article>
+  `;
+}
+
+/** min..max drawn on the group's shared axis, so the card shows where the range
+ *  sits as well as how wide it is. */
+function renderGaitRange(item: GaitParameter, axis: GaitRangeAxis): string {
+  if (!axis || !isFiniteNumber(item.value_min) || !isFiniteNumber(item.value_max)) return "";
+  const minimum = item.value_min as number;
+  const maximum = item.value_max as number;
+  const span = axis.max - axis.min;
+  const left = ((minimum - axis.min) / span) * 100;
+  const width = Math.max(2, ((maximum - minimum) / span) * 100);
+  const zeroMark = axis.min < 0 && axis.max > 0
+    ? `<span class="gait-range-zero" style="left: ${((0 - axis.min) / span) * 100}%;"></span>`
+    : "";
+  return `
+    <div class="gait-range">
+      <div class="gait-range-track">
+        ${zeroMark}
+        <span class="gait-range-span" style="left: ${left}%; width: ${width}%;"></span>
+      </div>
+      <div class="gait-range-values">
+        <span class="gait-range-bound">
+          <small>Lower Angle</small>
+          <strong>${formatGaitValue(minimum)}</strong>
+        </span>
+        <span class="gait-range-bound is-upper">
+          <small>Peak Angle</small>
+          <strong>${formatGaitValue(maximum)}</strong>
+        </span>
+      </div>
+    </div>
   `;
 }
 
@@ -464,12 +528,24 @@ async function runReport(): Promise<void> {
 async function loadConfig(): Promise<void> {
   config = await fetchJson<Record<string, unknown>>("/api/analysis/config");
   config = mergeConfig(config, loadStoredAnalysisConfig());
+  applyPinnedConfigValues(config);
   renderConfigForm();
+}
+
+/** Values the operator no longer picks. A browser that stored them before they
+ *  were hidden would otherwise be stuck on the old choice with no way back. */
+function applyPinnedConfigValues(targetConfig: Record<string, unknown>): void {
+  const kinematics = targetConfig.kinematics as Record<string, unknown> | undefined;
+  if (!kinematics) return;
+  kinematics.use_simple_model = false;
+  kinematics.use_augmentation = true;
+  kinematics.right_left_symmetry = true;
 }
 
 async function resetConfigToDefault(): Promise<void> {
   clearStoredAnalysisConfig();
   config = await fetchJson<Record<string, unknown>>("/api/analysis/config");
+  applyPinnedConfigValues(config);
   renderConfigForm();
 }
 
@@ -480,9 +556,12 @@ async function loadSessions(preferredSessionId = ""): Promise<void> {
   sessions = await fetchJson<CaptureSession[]>(`/api/analysis/sessions?${params.toString()}`);
   sessionSelect.innerHTML = [
     `<option value="">Select session</option>`,
+    ...(sessions.length > 0 ? [`<option value="${BATCH_ALL_VALUE}">All - Batch Process</option>`] : []),
     ...sessions.map((session) => `<option value="${session.session_id}">${session.subject.name} - ${session.session_id}</option>`),
   ].join("");
-  if (preferredSessionId && sessions.some((session) => session.session_id === preferredSessionId)) {
+  if (preferredSessionId === BATCH_ALL_VALUE && sessions.length > 0) {
+    sessionSelect.value = BATCH_ALL_VALUE;
+  } else if (preferredSessionId && sessions.some((session) => session.session_id === preferredSessionId)) {
     sessionSelect.value = preferredSessionId;
   } else if (sessions.length > 0) {
     sessionSelect.value = sessions[0].session_id;
@@ -1640,9 +1719,6 @@ function renderConfigField(path: string, key: string, value: unknown): string {
   if (path === "base.frame_range") {
     return renderFrameRangeControl(value);
   }
-  if (path === "pose.mode") {
-    return renderSegmentedControl(path, key, String(value || "normal"), ["normal", "performance"]);
-  }
   if (selectConfigOptions[path]) {
     return renderSelectControl(path, key, String(value ?? ""), selectConfigOptions[path]);
   }
@@ -1679,6 +1755,17 @@ function frameRangeValue(value: unknown, maxFrame: number): [number, number] {
 }
 
 function renderFrameRangeControl(value: unknown): string {
+  if (sessionSelect?.value === BATCH_ALL_VALUE) {
+    // 세션이 정해지지 않아 프레임 수를 알 수 없다. 배치는 각 영상 전체를 쓴다.
+    return `
+      <div class="frame-range-control" data-frame-range-control>
+        <div class="frame-range-label-row">
+          <span>frame_range</span>
+        </div>
+        <p class="frame-range-batch-note">auto - each session runs its full video</p>
+      </div>
+    `;
+  }
   const maxFrame = frameRangeMax();
   const [startRaw, endRaw] = frameRangeValue(value, maxFrame);
   const start = Math.min(startRaw, endRaw);
@@ -2239,20 +2326,22 @@ function drawKeypointTooltip(ctx: CanvasRenderingContext2D, text: string, x: num
   ctx.fillText(text, boxX + 6, boxY + 15);
 }
 
+// 오버레이 영상 및 3D 뷰와 같은 팔레트. 좌/우 집합도 video_utils.py 와 동일하게
+// 눈(1,2)과 귀(3,4)를 포함한다.
+const keypointLeftIndices = [1, 3, 5, 7, 9, 11, 13, 15, 20, 22, 24];
+const keypointRightIndices = [2, 4, 6, 8, 10, 12, 14, 16, 21, 23, 25];
+
 function keypointColor(index: number): string {
-  if ([5, 7, 9, 11, 13, 15, 20, 22, 24].includes(index)) return "#5b8fd6";
-  if ([6, 8, 10, 12, 14, 16, 21, 23, 25].includes(index)) return "#d1614f";
-  return "#f2f1ec";
+  if (keypointLeftIndices.includes(index)) return "#2f3f5c";
+  if (keypointRightIndices.includes(index)) return "#a4483c";
+  return "#8a6d3b";
 }
 
 function keypointBoneColor(a: number, b: number): string {
-  const left = "#5b8fd6";
-  const right = "#d1614f";
   const colorA = keypointColor(a);
   const colorB = keypointColor(b);
-  if (colorA === left && colorB === left) return "rgba(91, 143, 214, 0.75)";
-  if (colorA === right && colorB === right) return "rgba(209, 97, 79, 0.75)";
-  return "rgba(242, 241, 236, 0.6)";
+  // 오버레이와 같은 규칙: 같은 쪽끼리면 그 쪽 색, 좌우가 섞이면 중앙 색.
+  return colorA === colorB ? colorA : "#8a6d3b";
 }
 
 function swapKeypointPairs(pairs: number[][]): void {
@@ -2472,6 +2561,10 @@ function formatVideoTime(seconds: number): string {
 }
 
 async function runAnalysis(): Promise<void> {
+  if (sessionSelect?.value === BATCH_ALL_VALUE) {
+    await runBatchAnalysis();
+    return;
+  }
   const session = selectedSession();
   if (!session || !runButton) return;
   runButton.disabled = true;
@@ -2543,20 +2636,87 @@ function clearCalibrationFile(): void {
   calibrationUploadPending = null;
 }
 
+/** 작업이 끝날 때까지 로그를 흘려보내며 기다리고, 최종 상태를 돌려준다. */
+function waitForJob(jobId: string): Promise<string> {
+  return new Promise((resolve) => {
+    let lastLogCount = 0;
+    const timer = window.setInterval(async () => {
+      let job: AnalysisJob;
+      try {
+        job = await fetchJson<AnalysisJob>(`/api/analysis/jobs/${jobId}`);
+      } catch (error) {
+        // 폴링이 끊기면 배치가 영영 멈추므로 실패로 매듭짓는다.
+        window.clearInterval(timer);
+        log(error instanceof Error ? error.message : "Lost track of the analysis job");
+        resolve("failed");
+        return;
+      }
+      job.logs.slice(lastLogCount).forEach((entry) => log(`[${entry.level}] ${entry.message}`));
+      lastLogCount = job.logs.length;
+      if (job.status === "completed" || job.status === "failed") {
+        window.clearInterval(timer);
+        log(job.status === "completed" ? "Analysis completed" : `Analysis failed: ${job.error || ""}`);
+        resolve(job.status);
+      }
+    }, 1000);
+  });
+}
+
 async function pollJob(jobId: string): Promise<void> {
-  let lastLogCount = 0;
-  const timer = window.setInterval(async () => {
-    const job = await fetchJson<AnalysisJob>(`/api/analysis/jobs/${jobId}`);
-    job.logs.slice(lastLogCount).forEach((entry) => log(`[${entry.level}] ${entry.message}`));
-    lastLogCount = job.logs.length;
-    if (job.status === "completed" || job.status === "failed") {
-      window.clearInterval(timer);
-      log(job.status === "completed" ? "Analysis completed" : `Analysis failed: ${job.error || ""}`);
-      if (runButton) runButton.disabled = false;
-      await loadSessions(sessionSelect?.value || "");
-      await loadAnalysisResults();
+  await waitForJob(jobId);
+  if (runButton) runButton.disabled = false;
+  await loadSessions(sessionSelect?.value || "");
+  await loadAnalysisResults();
+}
+
+/** 목록의 모든 세션을 위에서부터 한 번에 하나씩 돌린다. */
+async function runBatchAnalysis(): Promise<void> {
+  if (!runButton) return;
+  const targets = sessions.slice();
+  if (targets.length === 0) {
+    log("No sessions to process.");
+    return;
+  }
+  runButton.disabled = true;
+  if (logPanel) logPanel.textContent = "";
+  const analysisConfig = readConfigForm();
+  config = analysisConfig;
+  storeAnalysisConfig(config);
+  logAnalysisConfig(analysisConfig);
+  if (calibrationFile?.files?.length) {
+    log("Batch process ignores the selected calibration file; each session uses its own.");
+  }
+  // 세션마다 프레임 수가 달라 하나의 숫자 범위를 공유할 수 없다. 파이프라인은
+  // "auto" 일 때만 영상별 길이를 읽으므로 배치에서는 항상 auto 로 보낸다.
+  const batchConfig = JSON.parse(JSON.stringify(analysisConfig)) as Record<string, unknown>;
+  setConfigPathValue(batchConfig, ["base", "frame_range"], "auto");
+  log(`Batch analysis queued for ${targets.length} session(s), frame_range=auto (each video in full)`);
+
+  let completed = 0;
+  let failed = 0;
+  for (let index = 0; index < targets.length; index += 1) {
+    const session = targets[index];
+    log(`--- [${index + 1}/${targets.length}] ${session.subject.name} - ${session.session_id} ---`);
+    try {
+      const job = await postJson<AnalysisJob>("/api/analysis/run", {
+        session_path: session.session_path,
+        config: batchConfig,
+      });
+      if (await waitForJob(job.job_id) === "completed") {
+        completed += 1;
+      } else {
+        failed += 1;
+      }
+    } catch (error) {
+      failed += 1;
+      log(error instanceof Error ? error.message : `Failed to start analysis for ${session.session_id}`);
     }
-  }, 1000);
+  }
+
+  log(`Batch finished: ${completed} completed, ${failed} failed`);
+  runButton.disabled = false;
+  await loadSessions(BATCH_ALL_VALUE);
+  await loadAnalysisResults();
 }
 
 selectRootButton?.addEventListener("click", async () => {

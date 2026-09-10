@@ -15,7 +15,15 @@ from scipy.spatial.transform import Rotation
 
 
 PELVIS_GLOBAL_COLUMNS = ("pelvis_tilt", "pelvis_list", "pelvis_rotation")
-L5_S1_JOINT_COLUMNS = ("L5_S1_Flex_Ext", "L5_S1_Lat_Bending", "L5_S1_axial_rotation")
+
+# The simple model spans pelvis->torso with one "back" joint, so its L5_S1_*
+# coordinates already carry the whole lumbar angle. The muscle model splits the
+# same motion across six coupled intervertebral joints, so only their sum is
+# comparable. Summing whatever segments the .mot actually has keeps both models
+# on the same scale without hard-coding the coupling coefficients.
+LUMBAR_SEGMENTS = ("L5_S1", "L4_L5", "L3_L4", "L2_L3", "L1_L2", "L1_T12")
+LUMBAR_AXES = ("Flex_Ext", "Lat_Bending", "axial_rotation")
+LUMBAR_TOTAL_COLUMNS = tuple(f"lumbar_{axis}" for axis in LUMBAR_AXES)
 TRUNK_GLOBAL_COLUMNS = ("trunk_tilt_global", "trunk_list_global", "trunk_rotation_global")
 OPENSIM_EULER_SEQUENCE = "ZXY"
 CONVERT_SIGN = ["elbow_flex_r_velocity", "elbow_flex_l_velocity", "arm_rot_r", "arm_rot_l"]
@@ -35,6 +43,7 @@ def kinematics_dataframe(mot_path: Path, filter_config: dict | None = None) -> p
     """time + joint angles + trunk global angles + angular velocities."""
     mot_df, in_degrees = read_mot_dataframe(Path(mot_path))
     angles_df = _filter_angle_dataframe(mot_df.copy(), filter_config)
+    _add_lumbar_totals(angles_df, Path(mot_path))
     trunk_global_angles = _trunk_global_angles(angles_df, in_degrees, Path(mot_path))
     for index, column in enumerate(TRUNK_GLOBAL_COLUMNS):
         angles_df[column] = trunk_global_angles[:, index]
@@ -67,17 +76,26 @@ def read_mot_dataframe(mot_path: Path) -> tuple[pd.DataFrame, bool]:
     return mot_df, in_degrees
 
 
+def _add_lumbar_totals(df: pd.DataFrame, mot_path: Path) -> None:
+    """Add pelvis-to-torso lumbar angles as the sum of whatever segments exist."""
+    for axis in LUMBAR_AXES:
+        columns = [f"{segment}_{axis}" for segment in LUMBAR_SEGMENTS if f"{segment}_{axis}" in df.columns]
+        if not columns:
+            raise ValueError(f"Cannot compute lumbar {axis}; no lumbar columns in {mot_path}")
+        df[f"lumbar_{axis}"] = df.loc[:, columns].sum(axis=1)
+
+
 def _trunk_global_angles(mot_df: pd.DataFrame, in_degrees: bool, mot_path: Path) -> np.ndarray:
-    required_columns = PELVIS_GLOBAL_COLUMNS + L5_S1_JOINT_COLUMNS
+    required_columns = PELVIS_GLOBAL_COLUMNS + LUMBAR_TOTAL_COLUMNS
     missing_columns = [column for column in required_columns if column not in mot_df.columns]
     if missing_columns:
         raise ValueError(f"Cannot compute trunk global angles; missing {missing_columns} in {mot_path}")
 
     pelvis_global = mot_df.loc[:, PELVIS_GLOBAL_COLUMNS].to_numpy(dtype=float)
-    l5_s1_joint = mot_df.loc[:, L5_S1_JOINT_COLUMNS].to_numpy(dtype=float)
+    lumbar_total = mot_df.loc[:, LUMBAR_TOTAL_COLUMNS].to_numpy(dtype=float)
     pelvis_rotation = Rotation.from_euler(OPENSIM_EULER_SEQUENCE, pelvis_global, degrees=in_degrees)
-    l5_s1_rotation = Rotation.from_euler(OPENSIM_EULER_SEQUENCE, l5_s1_joint, degrees=in_degrees)
-    trunk_rotation = pelvis_rotation * l5_s1_rotation
+    lumbar_rotation = Rotation.from_euler(OPENSIM_EULER_SEQUENCE, lumbar_total, degrees=in_degrees)
+    trunk_rotation = pelvis_rotation * lumbar_rotation
     return trunk_rotation.as_euler(OPENSIM_EULER_SEQUENCE, degrees=in_degrees)
 
 

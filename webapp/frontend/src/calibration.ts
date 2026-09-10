@@ -1,4 +1,5 @@
 import { fetchJson, postJson } from "./api.js";
+import { pagerStep, renderListPager } from "./list_pager.js";
 import type { CameraSettings, CameraStatus, PhoneDraft } from "./types.js";
 
 declare global {
@@ -138,11 +139,16 @@ interface PointCanvasState {
 
 const cameraList = document.querySelector<HTMLElement>("#cameraList");
 const calibrationList = document.querySelector<HTMLElement>("#calibrationList");
+const calibrationPager = document.querySelector<HTMLElement>("#calibrationPager");
+// flask_app.py 의 LIST_PAGE_SIZE 와 같은 값이어야 첫 화면이 흔들리지 않는다.
+const CALIBRATION_PAGE_SIZE = 10;
+let calibrationPage = 0;
+let lastCalibrations: CalibrationRecord[] = [];
 const captureState = document.querySelector<HTMLElement>("#captureState");
 const storageRootInput = document.querySelector<HTMLInputElement>("#storageRootInput");
 const selectStorageRootButton = document.querySelector<HTMLButtonElement>("[data-select-storage-root]");
 const cameraSettingsForm = document.querySelector<HTMLFormElement>("[data-camera-settings-form]");
-const calibrationSetupForm = document.querySelector<HTMLFormElement>("[data-calibration-setup-form]");
+const projectNameInput = document.querySelector<HTMLInputElement>("[data-project-name-input]");
 const calibrationDetailForm = document.querySelector<HTMLFormElement>("[data-calibration-detail-form]");
 const calibrationMode = document.querySelector<HTMLSelectElement>("[data-calibration-mode]");
 const calibrationBoardType = document.querySelector<HTMLSelectElement>("[data-calibration-board-type]");
@@ -334,11 +340,18 @@ function renderCameras(cameras: CameraStatus[]): void {
 
 function renderCalibrations(calibrations: CalibrationRecord[]): void {
   if (!calibrationList) return;
+  lastCalibrations = calibrations;
   if (calibrations.length === 0) {
     calibrationList.innerHTML = `<p class="empty">No calibration folders yet.</p>`;
+    renderListPager(calibrationPager, 0, 0);
     return;
   }
+  // 폴더가 지워져 페이지가 사라지면 마지막 페이지로 당겨온다.
+  const pageCount = Math.ceil(calibrations.length / CALIBRATION_PAGE_SIZE);
+  calibrationPage = Math.min(Math.max(calibrationPage, 0), pageCount - 1);
+  const start = calibrationPage * CALIBRATION_PAGE_SIZE;
   calibrationList.innerHTML = calibrations
+    .slice(start, start + CALIBRATION_PAGE_SIZE)
     .map(
       (calibration) => {
         const videos = calibration.videos.length > 0
@@ -383,7 +396,16 @@ function renderCalibrations(calibrations: CalibrationRecord[]): void {
       },
     )
     .join("");
+  renderListPager(calibrationPager, calibrationPage, pageCount);
 }
+
+calibrationPager?.addEventListener("click", (event) => {
+  const step = pagerStep(event.target);
+  if (step === 0) return;
+  calibrationPage += step;
+  renderCalibrations(lastCalibrations);
+  calibrationList?.scrollIntoView({ behavior: "smooth", block: "start" });
+});
 
 function updateCalibrationTargetOptions(cameras: CameraStatus[]): void {
   if (!calibrationTargetSelect) return;
@@ -644,13 +666,12 @@ function copyIntrinsicBoardFieldsToExtrinsic(): void {
 }
 
 async function calibrationPayload(): Promise<Record<string, unknown> | null> {
-  if (!calibrationSetupForm || !calibrationSetupForm.reportValidity()) return null;
-  const data = new FormData(calibrationSetupForm);
+  if (!projectNameInput || !projectNameInput.reportValidity()) return null;
   const target = calibrationTargetSelect?.value || "extrinsic";
   const intrinsic = target.startsWith("intrinsic:");
   const intrinsicCameraLabel = intrinsic ? target.slice("intrinsic:".length) : "";
   return {
-    project_name: String(data.get("project_name") || ""),
+    project_name: projectNameInput.value.trim(),
     calibration_mode: intrinsic ? "intrinsic" : "extrinsic",
     intrinsic_camera_label: intrinsicCameraLabel,
     phone_session_token: currentPhoneSessionToken(),

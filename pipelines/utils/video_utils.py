@@ -8,7 +8,6 @@ import tempfile
 from pathlib import Path
 
 import cv2
-import matplotlib.pyplot as plt
 import numpy as np
 
 logger = logging.getLogger(__name__)
@@ -73,7 +72,12 @@ def _is_h264_mp4(path: str) -> bool:
 
 
 HALPE26_SKELETON_PAIRS = [
-    (0, 17), (18, 17), (18, 19),
+    # 머리는 코를 중심으로 눈-귀 사슬과 정수리를 잇는다.
+    (18, 0),                       # Neck - Nose
+    (0, 17),                       # Nose - Head
+    (0, 1), (0, 2),                # Nose - LEye / REye
+    (1, 3), (2, 4),                # LEye - LEar / REye - REar
+    (18, 19),                      # Neck - Hip
     (18, 5), (18, 6),
     (5, 7), (7, 9),
     (6, 8), (8, 10),
@@ -93,15 +97,22 @@ colors = [
     (0, 125, 255), (0, 255, 125), (125, 0, 255), (125, 255, 0), (0, 255, 0),
 ]
 
-KEYPOINT_COLORS = [
-    (255, 230, 240), (255, 180, 200), (200, 255, 220),
-    (255, 140, 160), (140, 255, 180), (255, 200, 120), (200, 120, 255),
-    (120, 255, 255), (255, 100, 200), (100, 200, 255), (220, 255, 100),
-    (255, 160, 80), (160, 80, 255), (80, 255, 200), (240, 180, 255),
-    (180, 255, 140), (255, 220, 160), (220, 160, 255), (160, 255, 255),
-    (255, 130, 210), (130, 210, 255), (210, 255, 130), (255, 190, 150),
-    (190, 150, 255), (150, 255, 190), (255, 170, 230), (170, 230, 255),
-]
+# 3D 뷰(webapp/frontend/src/analysis.ts 의 pose3DMarkerColor/pose3DLineColor)와
+# 같은 팔레트. OpenCV 는 BGR 순서라 RGB 를 뒤집어 둔다.
+POSE3D_LEFT_BGR = (92, 63, 47)      # #2f3f5c
+POSE3D_RIGHT_BGR = (60, 72, 164)    # #a4483c
+POSE3D_CENTER_BGR = (59, 109, 138)  # #8a6d3b
+
+LEFT_KEYPOINTS = frozenset({1, 3, 5, 7, 9, 11, 13, 15, 20, 22, 24})
+RIGHT_KEYPOINTS = frozenset({2, 4, 6, 8, 10, 12, 14, 16, 21, 23, 25})
+
+def keypoint_side_color(index):
+    """3D 뷰와 같은 좌/우/중앙 색을 돌려준다."""
+    if index in LEFT_KEYPOINTS:
+        return POSE3D_LEFT_BGR
+    if index in RIGHT_KEYPOINTS:
+        return POSE3D_RIGHT_BGR
+    return POSE3D_CENTER_BGR
 
 thickness = 2
 
@@ -230,33 +241,32 @@ def draw_bounding_box(img, X, Y, colors=colors, fontSize=0.3, thickness=1):
 
 def draw_skel(img, X, Y, skeleton_pairs=HALPE26_SKELETON_PAIRS):
     """각 사람의 스켈레톤을 그린다."""
-    left_keypoints = {1, 3, 5, 7, 9, 11, 13, 15, 20, 22, 24}
-    right_keypoints = {2, 4, 6, 8, 10, 12, 14, 16, 21, 23, 25}
-
     for (x, y) in zip(X, Y):
-        if not np.isnan(x).all():
-            for id1, id2 in skeleton_pairs:
-                if not (np.isnan(x[id1]) or np.isnan(y[id1]) or np.isnan(x[id2]) or np.isnan(y[id2])):
-                    if (id1 in right_keypoints or id2 in right_keypoints) and not (id1 in left_keypoints or id2 in left_keypoints):
-                        c = (0, 140, 255)
-                    elif (id1 in left_keypoints or id2 in left_keypoints) and not (id1 in right_keypoints or id2 in right_keypoints):
-                        c = (0, 255, 100)
-                    else:
-                        c = (255, 100, 255)
-                    cv2.line(img, (int(x[id1]), int(y[id1])), (int(x[id2]), int(y[id2])), c, thickness)
+        if np.isnan(x).all():
+            continue
+        for id1, id2 in skeleton_pairs:
+            if np.isnan(x[id1]) or np.isnan(y[id1]) or np.isnan(x[id2]) or np.isnan(y[id2]):
+                continue
+            # 3D 뷰와 같은 규칙: 같은 쪽끼리면 그 쪽 색, 좌우가 섞이면 중앙 색.
+            color1 = keypoint_side_color(id1)
+            color2 = keypoint_side_color(id2)
+            color = color1 if color1 == color2 else POSE3D_CENTER_BGR
+            cv2.line(img, (int(x[id1]), int(y[id1])), (int(x[id2]), int(y[id2])), color, thickness)
     return img
 
 
 def draw_keypts(img, X, Y, scores, cmap_str='RdYlGn', use_keypoint_colors=True):
     """각 사람의 키포인트를 그린다."""
-    n_kp = len(KEYPOINT_COLORS)
     for (x, y, s) in zip(X, Y, scores):
         for i in range(len(x)):
             if np.isnan(x[i]) or np.isnan(y[i]):
                 continue
             if use_keypoint_colors:
-                c = KEYPOINT_COLORS[i % n_kp]
+                c = keypoint_side_color(i)
             else:
+                # 신뢰도 기반 컬러맵. 호출부가 없어 matplotlib 은 여기서만 늦게 부른다.
+                import matplotlib.pyplot as plt
+
                 sc = 0.0 if np.isnan(s[i]) else max(0, min(0.99, float(s[i])))
                 c_rgb = plt.get_cmap(cmap_str)(sc)[:-1]
                 c = tuple(int(c_rgb[k] * 255) for k in (2, 1, 0))

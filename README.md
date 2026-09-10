@@ -62,7 +62,23 @@ Place the downloaded `models` folder here:
 pipelines/models
 ```
 
-The pose pipeline expects model files under `pipelines/models`.
+The pose pipeline expects this layout:
+
+```text
+pipelines/models/normal/detector_end2end.onnx   YOLOX-m  (COCO)
+pipelines/models/normal/rtmpose_end2end.onnx    RTMPose-m
+```
+
+The detector is YOLOX's own ONNX release and can be re-fetched directly; save it as
+`detector_end2end.onnx`:
+
+```text
+https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_m.onnx
+```
+
+Use this export rather than an mmdeploy ONNX SDK one. The SDK builds bake an NMS module
+into the graph, which CoreML mis-compiles: on macOS the detector then falls back to CPU and
+runs about six times slower.
 
 ### VideoPose3D lifting weights
 
@@ -188,14 +204,14 @@ repository actually takes from the project and where that lands in the code.
 | [OpenCap](https://github.com/opencap-org/opencap-core) | LSTM marker augmenter (v0.3 lower/upper) that adds anatomical markers to the triangulated TRC | `pipelines/MarkerAugmenter/`, `pipelines/markerAugmentation.py` | Apache-2.0 |
 | [VideoPose3D](https://github.com/facebookresearch/VideoPose3D) | Temporal dilated-convolution model that lifts 2D keypoints to 3D, used to obtain per-camera bone directions during automatic calibration | `pipelines/calibration/keypoints/lift3d.py` | **CC BY-NC 4.0 (non-commercial)** |
 | [lab-camera-dynamic-calibrator](https://github.com/flodelaplace/lab-camera-dynamic-calibrator) | Markerless extrinsic calibration from human motion: linear solve from bone orientations, bundle adjustment, metric scaling | `pipelines/calibration/keypoints/` | MIT |
-| [RTMPose](https://github.com/open-mmlab/mmpose/tree/main/projects/rtmpose) via [rtmlib](https://github.com/Tau-J/rtmlib) | 2D whole-body pose estimation (Halpe-26). `rtmlib` runs the bundled ONNX model without the full MMPose stack | `pipelines/pose_estimation/models.py`, `pipelines/models/*/rtmpose_end2end.onnx` | Apache-2.0 |
-| [Ultralytics YOLO](https://github.com/ultralytics/ultralytics) | Person detection; the boxes RTMPose runs on | `pipelines/pose_estimation/models.py`, `pipelines/models/*/yolo_ckpt.pt` | **AGPL-3.0 (copyleft)** |
+| [RTMPose](https://github.com/open-mmlab/mmpose/tree/main/projects/rtmpose) via [rtmlib](https://github.com/Tau-J/rtmlib) | 2D whole-body pose estimation (Halpe-26). `rtmlib` runs the bundled ONNX model without the full MMPose stack | `pipelines/pose_estimation/models.py`, `pipelines/models/normal/rtmpose_end2end.onnx` | Apache-2.0 |
+| [YOLOX](https://github.com/Megvii-BaseDetection/YOLOX) via [rtmlib](https://github.com/Tau-J/rtmlib) | Person detection; the boxes RTMPose runs on. The bundled weights are YOLOX-m from the project's own COCO-trained ONNX release | `pipelines/pose_estimation/models.py`, `pipelines/models/normal/detector_end2end.onnx` | Apache-2.0 |
 | [OpenSim](https://github.com/opensim-org/opensim-core) | Musculoskeletal model scaling and inverse kinematics | `pipelines/kinematics/` | Apache-2.0 |
 
 ### Licensing note
 
-Most of the above is permissively licensed, but two entries carry obligations worth
-knowing before you distribute anything built on this repository.
+Everything above is permissively licensed except one optional checkpoint, worth knowing
+about before you distribute anything built on this repository.
 
 **VideoPose3D checkpoint — CC BY-NC 4.0.** Not redistributable and not usable
 commercially, so it is deliberately not bundled here; you download it yourself (see
@@ -204,12 +220,6 @@ automatic calibration. Capture, pose estimation, board-based calibration, recons
 and kinematics never touch it, so for commercial use calibrate with the Object or
 CheckerBoard targets instead, or supply your own calibration file.
 
-**Ultralytics YOLO — AGPL-3.0.** A strong copyleft licence: distributing or offering this
-app over a network while it depends on Ultralytics generally requires releasing your own
-source under AGPL-3.0 as well. Ultralytics sells a commercial licence for projects that
-cannot do that. This affects the whole app, not just calibration, because person detection
-runs on every analysis.
-
-Neither point is legal advice; check with whoever owns the licensing decision for your
+None of this is legal advice; check with whoever owns the licensing decision for your
 deployment.
 

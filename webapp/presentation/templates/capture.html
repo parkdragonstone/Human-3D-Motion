@@ -21,7 +21,7 @@
   <div class="work-surface">
     <div class="section-title">
       <span>01</span>
-      <h2>Subject and Storage</h2>
+      <h2>Storage</h2>
     </div>
     <form class="storage-form" data-storage-form>
       <label>
@@ -30,28 +30,6 @@
       </label>
       <button class="button secondary" type="button" data-select-storage-root>Select Path</button>
     </form>
-
-    <div class="field-row" data-subject-fields>
-      <label>
-        Name
-        <input name="name" form="captureForm" placeholder="RHB" required>
-      </label>
-      <label>
-        Height cm
-        <input name="height_cm" form="captureForm" type="number" min="80" max="230" value="170" required>
-      </label>
-      <label>
-        Weight kg
-        <input name="weight_kg" form="captureForm" type="number" min="20" max="180" value="70" required>
-      </label>
-      <label>
-        Hand
-        <select name="hand" form="captureForm" required>
-          <option value="right" selected>Right</option>
-          <option value="left">Left</option>
-        </select>
-      </label>
-    </div>
   </div>
 
   <div class="work-surface">
@@ -121,6 +99,28 @@
         {% endfor %}
       </div>
 
+      <div class="field-row" data-subject-fields>
+        <label>
+          Name
+          <input name="name" placeholder="RHB" required>
+        </label>
+        <label>
+          Height cm
+          <input name="height_cm" type="number" min="80" max="230" value="170" required>
+        </label>
+        <label>
+          Weight kg
+          <input name="weight_kg" type="number" min="20" max="180" value="70" required>
+        </label>
+        <label>
+          Hand
+          <select name="hand" required>
+            <option value="right" selected>Right</option>
+            <option value="left">Left</option>
+          </select>
+        </label>
+      </div>
+
       <div class="action-bar">
         <div class="capture-action-status" id="captureState">
           <span class="status-dot ready"></span>
@@ -178,6 +178,7 @@
         <p class="empty">No capture sessions yet.</p>
       {% endfor %}
     </div>
+    <div class="list-pager" id="sessionPager" hidden></div>
   </div>
 </section>
 {% endblock %}

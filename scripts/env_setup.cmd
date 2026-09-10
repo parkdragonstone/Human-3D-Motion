@@ -59,8 +59,6 @@ if errorlevel 1 goto :fail_verify
 goto :install_command
 
 :verify_gpu
-call conda run -n %ENV_NAME% python -c "import torch; assert torch.cuda.is_available(), f'Torch CUDA unavailable: {torch.__version__}, CUDA={torch.version.cuda}'; print('Torch CUDA:', torch.__version__, torch.version.cuda, torch.cuda.get_device_name(0))"
-if errorlevel 1 goto :fail_verify
 call conda run -n %ENV_NAME% python -c "import onnxruntime as ort; providers = ort.get_available_providers(); assert 'CUDAExecutionProvider' in providers, providers; print('ONNX Runtime providers:', providers)"
 if errorlevel 1 goto :fail_verify
 call conda run -n %ENV_NAME% python -c "from pipelines.poseEstimation import setup_backend_device; resolved = setup_backend_device('auto', 'auto'); assert resolved == ('onnxruntime', 'cuda'), resolved; print('Pose backend/device:', resolved)"

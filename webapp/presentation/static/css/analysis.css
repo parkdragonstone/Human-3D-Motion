@@ -1177,3 +1177,71 @@ textarea[name="object_points"]::-webkit-scrollbar-thumb:hover {
     flex-wrap: wrap;
   }
 }
+
+.frame-range-batch-note {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--muted, #85857e);
+}
+
+/* ROM 카드의 최소~최대 구간 막대. 같은 그룹은 같은 축을 쓴다. */
+.gait-range {
+  margin-top: 10px;
+}
+
+.gait-range-track {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(23, 24, 26, 0.08);
+  overflow: hidden;
+}
+
+.gait-range-span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 3px;
+  background: #8a6d3b;
+}
+
+.gait-range-zero {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 1px;
+  background: rgba(23, 24, 26, 0.35);
+}
+
+.gait-range-values {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.gait-range-bound {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.gait-range-bound.is-upper {
+  align-items: flex-end;
+  text-align: right;
+}
+
+.gait-range-bound small {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted, #85857e);
+  white-space: nowrap;
+}
+
+.gait-range-bound strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink, #17181a);
+}

@@ -1,4 +1,5 @@
 import { fetchJson, postJson } from "./api.js";
+import { pagerStep, renderListPager } from "./list_pager.js";
 import type { CameraSettings, CameraStatus, CaptureSession, CaptureStatusPayload, PhoneDraft } from "./types.js";
 
 declare global {
@@ -33,6 +34,11 @@ const captureActionButton = document.querySelector<HTMLButtonElement>("[data-cap
 const captureActionLabel = document.querySelector<HTMLElement>("[data-capture-action-label]");
 const recordingTimer = document.querySelector<HTMLElement>("[data-capture-recording-timer]");
 const sessionList = document.querySelector<HTMLElement>("#sessionList");
+const sessionPager = document.querySelector<HTMLElement>("#sessionPager");
+// flask_app.py 의 LIST_PAGE_SIZE 와 같은 값이어야 첫 화면이 흔들리지 않는다.
+const SESSION_PAGE_SIZE = 10;
+let sessionPage = 0;
+let lastSessions: CaptureSession[] = [];
 const phoneQrList = document.querySelector<HTMLElement>("#phoneQrList");
 const phoneTokenInput = document.querySelector<HTMLInputElement>("[data-phone-session-token-input]");
 let lastCameras: CameraStatus[] = [];
@@ -126,11 +132,17 @@ async function refreshPhoneDraft(): Promise<void> {
 
 function renderSessions(sessions: CaptureSession[]): void {
   if (!sessionList) return;
+  lastSessions = sessions;
   if (sessions.length === 0) {
     sessionList.innerHTML = `<p class="empty">No capture sessions yet.</p>`;
+    renderListPager(sessionPager, 0, 0);
     return;
   }
-  const visibleSessions = sessions.slice(0, 8);
+  // 세션이 지워져 페이지가 사라지면 마지막 페이지로 당겨온다.
+  const pageCount = Math.ceil(sessions.length / SESSION_PAGE_SIZE);
+  sessionPage = Math.min(Math.max(sessionPage, 0), pageCount - 1);
+  const start = sessionPage * SESSION_PAGE_SIZE;
+  const visibleSessions = sessions.slice(start, start + SESSION_PAGE_SIZE);
   sessionList.innerHTML = visibleSessions
     .map(
       (session) => `
@@ -168,7 +180,16 @@ function renderSessions(sessions: CaptureSession[]): void {
     )
     .join("");
   syncAnalysisLinks(visibleSessions);
+  renderListPager(sessionPager, sessionPage, pageCount);
 }
+
+sessionPager?.addEventListener("click", (event) => {
+  const step = pagerStep(event.target);
+  if (step === 0) return;
+  sessionPage += step;
+  renderSessions(lastSessions);
+  sessionList?.scrollIntoView({ behavior: "smooth", block: "start" });
+});
 
 function analysisUrl(sessionId: string): string {
   const params = new URLSearchParams({ session_id: sessionId });

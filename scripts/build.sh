@@ -10,7 +10,7 @@ ENV_NAME="human-3d-motion"
 
 cd "$REPO_ROOT"
 
-if [[ ! -f "pipelines/models/normal/rtmpose_end2end.onnx" ]]; then
+if [[ ! -f "pipelines/models/normal/rtmpose_end2end.onnx" || ! -f "pipelines/models/normal/detector_end2end.onnx" ]]; then
   echo "[ERROR] Pose model files are missing." >&2
   echo "        Place the models folder at pipelines/models before building." >&2
   exit 1

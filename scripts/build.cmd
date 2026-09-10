@@ -26,6 +26,7 @@ goto :mode_ready
 pushd "%REPO_ROOT%" || exit /b 1
 
 if not exist "pipelines\models\normal\rtmpose_end2end.onnx" goto :fail_models
+if not exist "pipelines\models\normal\detector_end2end.onnx" goto :fail_models
 
 call "%~dp0env_setup.cmd" %MODE%
 if errorlevel 1 goto :fail_env

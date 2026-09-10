@@ -31,13 +31,6 @@
       </label>
       <button class="button secondary" type="button" data-select-storage-root>Select Path</button>
     </form>
-
-    <form class="calibration-setup-form" data-calibration-setup-form>
-      <label>
-        Project Name
-        <input name="project_name" placeholder="bullpen_day01" required>
-      </label>
-    </form>
   </div>
 
   <div class="work-surface">
@@ -108,15 +101,21 @@
         {% endfor %}
       </div>
 
-      <label>
-        Save Camera
-        <select name="calibration_target" data-calibration-target-select>
-          {% for camera in cameras %}
-            <option value="intrinsic:{{ camera.label }}">intrinsic {{ camera.label|lower }}</option>
-          {% endfor %}
-          <option value="extrinsic">extrinsic</option>
-        </select>
-      </label>
+      <div class="calibration-project-row">
+        <label>
+          Project Name
+          <input name="project_name" placeholder="bullpen_day01" data-project-name-input required>
+        </label>
+        <label>
+          Save Camera
+          <select name="calibration_target" data-calibration-target-select>
+            {% for camera in cameras %}
+              <option value="intrinsic:{{ camera.label }}">intrinsic {{ camera.label|lower }}</option>
+            {% endfor %}
+            <option value="extrinsic">extrinsic</option>
+          </select>
+        </label>
+      </div>
 
       <div class="action-bar">
         <div class="capture-action-status" id="captureState">
@@ -292,6 +291,7 @@
         <p class="empty">No calibration folders yet.</p>
       {% endfor %}
     </div>
+    <div class="list-pager" id="calibrationPager" hidden></div>
   </div>
 </section>
 

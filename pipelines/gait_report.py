@@ -26,7 +26,7 @@ METADATA_COLUMNS = ["name", "height", "weight", "hand", "motion", "walking_direc
 # detected heading only when the trial actually progresses along it.
 MIN_PATH_PROGRESSION = 0.15
 MIN_NET_TRAVEL_M = 0.20
-PARAMETER_COLUMNS = ["parameter", "label", "side", "value", "unit"]
+PARAMETER_COLUMNS = ["parameter", "label", "side", "value", "unit", "value_min", "value_max"]
 
 
 def export_gait_parameters_csv(
@@ -183,12 +183,19 @@ def compute_gait_parameters(
             "stride_time", "Stride Time", side, _mean(_intervals(heel_contacts)), "s",
         ))
 
-    for side, heel_contacts, toe_offs in (("right", right_hc, right_to), ("left", left_hc, left_to)):
+    for side, heel_contacts, toe_offs, other_hc, other_to in (
+        ("right", right_hc, right_to, left_hc, left_to),
+        ("left", left_hc, left_to, right_hc, right_to),
+    ):
         stance = _stance_percent(heel_contacts, toe_offs)
         parameters.append(_parameter("stance_phase", "Stance Phase", side, stance, "% cycle"))
         parameters.append(_parameter(
             "swing_phase", "Swing Phase", side,
             None if stance is None else 100.0 - stance, "% cycle",
+        ))
+        parameters.append(_parameter(
+            "single_support", "Single Support", side,
+            _single_support_percent(heel_contacts, toe_offs, other_hc, other_to), "% cycle",
         ))
 
     parameters.append(_parameter(
@@ -196,16 +203,30 @@ def compute_gait_parameters(
         _double_support_percent(right_hc, right_to, left_hc, left_to), "% cycle",
     ))
 
-    for side, suffix in (("right", "r"), ("left", "l")):
-        parameters.append(_parameter(
-            "peak_knee_flexion", "Peak Knee Flexion", side, _maximum(angles_df, f"knee_angle_{suffix}"), "deg",
-        ))
-        parameters.append(_parameter("knee_rom", "Knee ROM", side, _range_of_motion(angles_df, f"knee_angle_{suffix}"), "deg"))
-        parameters.append(_parameter("hip_rom", "Hip ROM", side, _range_of_motion(angles_df, f"hip_flexion_{suffix}"), "deg"))
-        parameters.append(_parameter("ankle_rom", "Ankle ROM", side, _range_of_motion(angles_df, f"ankle_angle_{suffix}"), "deg"))
+    # Right and left land next to each other so the two sides can be compared.
+    for key, label, column_template in (
+        ("knee_rom", "Knee ROM", "knee_angle_{}"),
+        ("hip_rom", "Hip Flexion ROM", "hip_flexion_{}"),
+        ("hip_adduction_rom", "Hip Adduction ROM", "hip_adduction_{}"),
+        ("hip_rotation_rom", "Hip Rotation ROM", "hip_rotation_{}"),
+        ("ankle_rom", "Ankle ROM", "ankle_angle_{}"),
+    ):
+        for side, suffix in (("right", "r"), ("left", "l")):
+            parameters.append(_rom_parameter(key, label, side, angles_df, column_template.format(suffix)))
 
-    parameters.append(_parameter("trunk_lean", "Trunk Lean", None, _mean_absolute(angles_df, "trunk_tilt_global"), "deg"))
-    parameters.append(_parameter("pelvic_obliquity", "Pelvic Obliquity", None, _range_of_motion(angles_df, "pelvis_list"), "deg"))
+    for key, label, column in (
+        ("pelvic_obliquity", "Pelvic Obliquity", "pelvis_list"),
+        ("pelvic_rotation", "Pelvic Rotation", "pelvis_rotation"),
+        ("trunk_lean", "Trunk Lean", "trunk_tilt_global"),
+        ("trunk_rotation", "Trunk Rotation", "trunk_rotation_global"),
+        # Pelvis-to-torso separation, i.e. the lumbar joint rather than the
+        # trunk's global attitude. Both are useful: the trunk angles say how the
+        # torso sits in the world, these say how far it is wound against the hips.
+        ("hip_shoulder_forward", "Hip-Shoulder Forward", "lumbar_Flex_Ext"),
+        ("hip_shoulder_lateral", "Hip-Shoulder Lateral", "lumbar_Lat_Bending"),
+        ("hip_shoulder_rotation", "Hip-Shoulder Rotation", "lumbar_axial_rotation"),
+    ):
+        parameters.append(_rom_parameter(key, label, None, angles_df, column))
 
     # Surfaced so a detected heading can be sanity-checked against the recording.
     parameters.append(_parameter("path_heading", "Path Heading", None, heading_degrees(unit), "deg"))
@@ -271,29 +292,52 @@ def read_gait_parameters_csv(csv_path: Path) -> list[dict]:
     df = pd.read_csv(csv_path)
     parameters: list[dict] = []
     for _index, row in df.iterrows():
-        value = row.get("value")
         parameters.append({
             "parameter": _text(row.get("parameter")),
             "label": _text(row.get("label")),
             "side": _text(row.get("side")) or None,
-            "value": None if pd.isna(value) else float(value),
+            "value": _csv_float(row.get("value")),
             "unit": _text(row.get("unit")),
+            # 이 컬럼들이 없는 예전 CSV 도 그대로 읽힌다.
+            "value_min": _csv_float(row.get("value_min")),
+            "value_max": _csv_float(row.get("value_max")),
         })
     return parameters
 
 
+def _csv_float(value) -> float | None:
+    if value is None or pd.isna(value):
+        return None
+    return float(value)
+
+
 # ── parameter maths ───────────────────────────────────────────────────────────
 
-def _parameter(key: str, label: str, side: str | None, value: float | None, unit: str) -> dict:
-    if value is not None and (not np.isfinite(value)):
-        value = None
+def _parameter(
+    key: str,
+    label: str,
+    side: str | None,
+    value: float | None,
+    unit: str,
+    value_min: float | None = None,
+    value_max: float | None = None,
+) -> dict:
+    """One report card. ``value_min``/``value_max`` let a range be drawn with it."""
     return {
         "parameter": key,
         "label": label,
         "side": side or "",
-        "value": None if value is None else round(float(value), 4),
+        "value": _finite(value),
         "unit": unit,
+        "value_min": _finite(value_min),
+        "value_max": _finite(value_max),
     }
+
+
+def _finite(value: float | None) -> float | None:
+    if value is None or not np.isfinite(value):
+        return None
+    return round(float(value), 4)
 
 
 def _event_times(events: list[dict] | None) -> list[float]:
@@ -384,6 +428,51 @@ def _stance_percent(heel_contacts: list[float], toe_offs: list[float]) -> float 
     return _mean(percents)
 
 
+def _rom_parameter(key: str, label: str, side: str | None, df: pd.DataFrame, column: str) -> dict:
+    """Range of motion, carrying the extremes it was measured between."""
+    values = _numeric_series(df, column)
+    if values is None:
+        return _parameter(key, label, side, None, "deg")
+    minimum = float(np.min(values))
+    maximum = float(np.max(values))
+    return _parameter(key, label, side, maximum - minimum, "deg", minimum, maximum)
+
+
+def _single_support_percent(
+    heel_contacts: list[float],
+    toe_offs: list[float],
+    other_hc: list[float],
+    other_to: list[float],
+) -> float | None:
+    """Share of a stride with only this foot down.
+
+    Stance minus the part of it the other foot shares, so single support, double
+    support and swing add up to the cycle instead of double-counting the overlap.
+    """
+    stance = _stance_intervals(heel_contacts, toe_offs)
+    other_stance = _stance_intervals(other_hc, other_to)
+    percents: list[float] = []
+    for contact, next_contact in zip(heel_contacts, heel_contacts[1:]):
+        cycle = next_contact - contact
+        if cycle <= 0:
+            continue
+        alone = 0.0
+        for start, end in stance:
+            window_start = max(contact, start)
+            window_end = min(next_contact, end)
+            if window_end <= window_start:
+                continue
+            shared = 0.0
+            for other_start, other_end in other_stance:
+                overlap_start = max(window_start, other_start)
+                overlap_end = min(window_end, other_end)
+                if overlap_end > overlap_start:
+                    shared += overlap_end - overlap_start
+            alone += (window_end - window_start) - shared
+        percents.append(max(0.0, min(100.0, alone / cycle * 100.0)))
+    return _mean(percents)
+
+
 def _stance_intervals(heel_contacts: list[float], toe_offs: list[float]) -> list[tuple[float, float]]:
     """(heel contact, next toe off) windows — the times that foot is on the ground."""
     intervals: list[tuple[float, float]] = []
@@ -431,19 +520,9 @@ def _numeric_series(df: pd.DataFrame, column: str) -> np.ndarray | None:
     return values if len(values) > 0 else None
 
 
-def _maximum(df: pd.DataFrame, column: str) -> float | None:
-    values = _numeric_series(df, column)
-    return None if values is None else float(np.max(values))
-
-
 def _range_of_motion(df: pd.DataFrame, column: str) -> float | None:
     values = _numeric_series(df, column)
     return None if values is None else float(np.max(values) - np.min(values))
-
-
-def _mean_absolute(df: pd.DataFrame, column: str) -> float | None:
-    values = _numeric_series(df, column)
-    return None if values is None else float(np.mean(np.abs(values)))
 
 
 def _mean(values: list[float]) -> float | None:

@@ -23,6 +23,11 @@ from webapp.presentation.serializers import (
 )
 
 
+# 목록 한 페이지에 보여줄 개수. 프론트엔드 페이저와 같은 값을 써야 첫 화면이
+# JS 가 다시 그린 뒤에도 그대로 유지된다.
+LIST_PAGE_SIZE = 10
+
+
 def create_app():
     app = Flask(
         __name__,
@@ -76,7 +81,7 @@ def create_app():
             phone_draft=phone_draft,
             active_capture=capture_service.active_capture(),
             sessions=sessions,
-            recent_sessions=[_session_to_dict(media_view_service.session_view(session)) for session in sessions[:6]],
+            recent_sessions=[_session_to_dict(media_view_service.session_view(session)) for session in sessions[:LIST_PAGE_SIZE]],
         )
 
     @app.post("/settings/storage-root")
@@ -136,7 +141,7 @@ def create_app():
             active_calibration=calibration_service.active(),
             calibrations=[
                 _calibration_record_to_dict(media_view_service.calibration_record_view(item))
-                for item in calibration_service.list_calibrations()
+                for item in calibration_service.list_calibrations()[:LIST_PAGE_SIZE]
             ],
         )
 

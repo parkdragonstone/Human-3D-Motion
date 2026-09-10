@@ -21,12 +21,10 @@ class BaseConfig:
 
 @dataclass
 class PoseConfig:
-    mode: str = "normal"                        # normal | performance
+    mode: str = "normal"                        # 변경 X (pipelines/models/<mode>/ 를 가리킴)
     device: str = "auto"                        # 변경 X
     backend: str = "auto"                       # 변경 X
     det_score_threshold: float = 0.25
-    det_iou: float = 0.7
-    det_nms: bool = True
     keypoint_likelihood_threshold: float = 0.5
     average_likelihood_threshold: float = 0.5
     keypoint_number_threshold: float = 0.3
@@ -81,7 +79,7 @@ class FilteringConfig:
 
 @dataclass
 class KinematicsConfig:
-    use_simple_model: bool = True
+    use_simple_model: bool = False      # 변경 X (muscles_flex 모델 고정)
     use_augmentation: bool = True
     right_left_symmetry: bool = True
     remove_individual_scaling_setup: bool = True
@@ -127,8 +125,6 @@ class AnalysisConfig:
                 "device": self.pose.device,
                 "backend": self.pose.backend,
                 "det_score_threshold": self.pose.det_score_threshold,
-                "det_iou": self.pose.det_iou,
-                "det_nms": self.pose.det_nms,
                 "keypoint_likelihood_threshold": self.pose.keypoint_likelihood_threshold,
                 "average_likelihood_threshold": self.pose.average_likelihood_threshold,
                 "keypoint_number_threshold": self.pose.keypoint_number_threshold,
@@ -226,8 +222,6 @@ class AnalysisConfig:
                 device=pose_d.get("device", "auto"),
                 backend=pose_d.get("backend", "auto"),
                 det_score_threshold=float(pose_d.get("det_score_threshold", 0.25)),
-                det_iou=float(pose_d.get("det_iou", 0.7)),
-                det_nms=bool(pose_d.get("det_nms", True)),
                 keypoint_likelihood_threshold=float(pose_d.get("keypoint_likelihood_threshold", 0.5)),
                 average_likelihood_threshold=float(pose_d.get("average_likelihood_threshold", 0.5)),
                 keypoint_number_threshold=float(pose_d.get("keypoint_number_threshold", 0.3)),
@@ -264,7 +258,7 @@ class AnalysisConfig:
                 ),
             ),
             kinematics=KinematicsConfig(
-                use_simple_model=bool(kin_d.get("use_simple_model", True)),
+                use_simple_model=bool(kin_d.get("use_simple_model", False)),
                 use_augmentation=bool(kin_d.get("use_augmentation", True)),
                 right_left_symmetry=bool(kin_d.get("right_left_symmetry", True)),
                 remove_individual_scaling_setup=bool(kin_d.get("remove_individual_scaling_setup", True)),
