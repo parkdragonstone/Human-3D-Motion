@@ -49,6 +49,7 @@ def create_app():
     phone_service = services.phone_service
     calibration_service = services.calibration_service
     calibration_recording_service = services.calibration_recording_service
+    report_service = services.report_service
     phone_socket_sessions: dict[str, dict[str, str]] = {}
 
     @app.context_processor
@@ -144,6 +145,16 @@ def create_app():
         analysis_root = analysis_workspace_service.page_root(request.args.get("root"))
         return render_template(
             "analysis.html",
+            storage_root=storage_root_service.get(),
+            initial_root=analysis_root,
+            initial_session_id=request.args.get("session_id", ""),
+        )
+
+    @app.get("/results")
+    def results_page():
+        analysis_root = analysis_workspace_service.page_root(request.args.get("root"))
+        return render_template(
+            "results.html",
             storage_root=storage_root_service.get(),
             initial_root=analysis_root,
             initial_session_id=request.args.get("session_id", ""),
@@ -283,7 +294,33 @@ def create_app():
 
     @app.get("/report")
     def report_page():
-        return render_template("workflow_placeholder.html", title="Report")
+        analysis_root = analysis_workspace_service.page_root(request.args.get("root"))
+        return render_template(
+            "report.html",
+            storage_root=storage_root_service.get(),
+            initial_root=analysis_root,
+            initial_session_id=request.args.get("session_id", ""),
+            report_options=report_service.options(),
+        )
+
+    @app.get("/api/report/parameters")
+    def api_report_parameters():
+        try:
+            return jsonify(report_service.parameters(request.args.get("session_path") or ""))
+        except (ValueError, FileNotFoundError) as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @app.post("/api/report/run")
+    def api_report_run():
+        data = request.get_json(silent=True) or {}
+        try:
+            return jsonify(report_service.run(
+                data.get("session_path") or "",
+                data.get("motion") or "",
+                data.get("walking_direction") or "",
+            ))
+        except (ValueError, FileNotFoundError) as exc:
+            return jsonify({"error": str(exc)}), 400
 
     @app.get("/api/cameras")
     def api_cameras():

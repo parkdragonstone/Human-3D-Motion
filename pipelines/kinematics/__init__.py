@@ -6,7 +6,6 @@ from pathlib import Path
 
 import opensim
 
-from ..kinematics_csv import export_combined_kinematics_csv, resolve_keypoint_trc
 from .inverse_kinematics import perform_ik as perform_IK
 from .scaling import (
     deactivate_measurements,
@@ -143,16 +142,4 @@ def run_kinematics(config_dict, emit_log=None):
         _log(f"\tIK took {round(end_time - start_time, 2)} seconds for {trc_file.name}.")
         _log(f"\tDone. OpenSim logs saved to {opensim_logs_file.resolve()}.")
         mot_path = kinematics_dir / (trc_file.stem + ".mot")
-        _log(f"\tJoint angle data saved to {mot_path.resolve()}")
-        keypoint_trc_path = resolve_keypoint_trc(Path(project_dir), trc_file)
-        combined_csv_path = export_combined_kinematics_csv(
-            Path(project_dir),
-            mot_path,
-            keypoint_trc_path,
-            kinematics_filter,
-            subject_metadata=subject,
-            fps=base.get("fps"),
-            motion=base.get("motion", "Baseball-Pitching"),
-            walking_direction=base.get("walking_direction", "-z"),
-        )
-        _log(f"\tCombined keypoint and kinematics CSV saved to {combined_csv_path.resolve()}\n")
+        _log(f"\tJoint angle data saved to {mot_path.resolve()}\n")

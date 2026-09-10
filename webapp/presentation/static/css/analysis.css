@@ -1,26 +1,38 @@
-﻿.analysis-video-title {
-  justify-content: space-between;
-}
-
-.analysis-video-title > div {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
+.analysis-video-title,
 .analysis-settings-title {
   justify-content: space-between;
 }
 
+.analysis-video-title > div,
 .analysis-settings-title > div {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
+.analysis-video-title-actions {
+  gap: 14px;
+}
+
+/* In the header the toggle is a compact inline control, not a full-width row. */
+.analysis-video-title-actions .toggle-row {
+  min-height: 0;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.analysis-video-title-actions .toggle-row input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+}
 
 .app-shell:has(.analysis-page) {
-  margin-right: 390px;
+  margin-right: 360px;
 }
 
 .analysis-main {
@@ -36,6 +48,8 @@
   max-width: 100%;
 }
 
+/* ---------- session setup ---------- */
+
 .analysis-session-setup-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -45,112 +59,323 @@
 
 .analysis-session-setup-row select,
 .analysis-calibration-upload .file-upload-control {
-  height: 46px;
-  min-height: 46px;
+  height: 36px;
+  min-height: 36px;
 }
 
 .analysis-calibration-upload {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
+  gap: 8px;
   align-items: end;
 }
 
 .analysis-calibration-upload .compact-button {
-  height: 46px;
+  height: 36px;
 }
 
 .analysis-calibration-upload .file-upload-control {
   display: flex;
   align-items: center;
   overflow: hidden;
+  border: 1px solid var(--line);
+  padding: 0 10px;
   cursor: pointer;
 }
 
-.visually-hidden-file-input {
+/* Sits inside .file-upload-control, whose `input` rule would otherwise stretch this
+   hidden input to full width and push the page into horizontal overflow. */
+.file-upload-control input.visually-hidden-file-input {
   position: absolute;
   width: 1px;
   height: 1px;
+  min-height: 0;
+  padding: 0;
   opacity: 0;
   pointer-events: none;
 }
 
 .file-upload-button {
-  height: 34px;
+  height: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  margin-right: 12px;
-  border-radius: 7px;
-  padding: 0 12px;
-  background: var(--acid);
-  color: var(--charcoal);
-  font-weight: 800;
+  margin-right: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0 10px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
 .file-upload-name {
   min-width: 0;
   overflow: hidden;
-  color: var(--text);
-  font-weight: 800;
+  color: var(--ink-soft);
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ---------- video ---------- */
+
+/* Sized for "Pause" so toggling playback does not resize the button. */
+.analysis-video-toolbar [data-toggle-play-videos] {
+  min-width: 64px;
 }
 
 .analysis-video-toolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   justify-content: space-between;
-  margin-top: 12px;
+  min-width: 0;
+  margin: 12px -18px -18px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--line-soft);
+  background: var(--surface);
+}
+
+.analysis-video-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 10px;
+}
+
+.analysis-video-grid.four-up {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.analysis-video-seek {
+  flex: 1;
+  min-width: 140px;
+}
+
+.analysis-video-timecode {
+  min-width: 150px;
+  color: var(--ink-soft);
+  font-family: var(--font);
+  font-size: 11px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* Label sits beside its select, not stacked above it. */
+.analysis-speed-control {
+  width: auto;
+  display: grid;
+  grid-auto-flow: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.analysis-speed-control > span {
+  white-space: nowrap;
+}
+
+.analysis-speed-control select {
+  width: auto;
+  min-width: 76px;
+  height: 28px;
+  padding: 0 22px 0 8px;
+  font-size: 11px;
+}
+
+.analysis-video-card {
+  display: grid;
+  gap: 6px;
   min-width: 0;
 }
 
+.analysis-video-frame {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #1b1c1e;
+}
+
+.analysis-video-card video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #1b1c1e;
+}
+
+.analysis-video-frame video {
+  border: 0;
+}
+
+.analysis-video-card small {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.keypoint-edit-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.keypoint-edit-canvas.is-enabled {
+  cursor: grab;
+  pointer-events: auto;
+}
+
+.keypoint-edit-canvas.is-enabled:active {
+  cursor: grabbing;
+}
+
+/* ---------- keypoint editor ---------- */
+
+.keypoint-edit-modal[hidden] {
+  display: none;
+}
+
+.keypoint-edit-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(23, 24, 26, 0.46);
+}
+
+.keypoint-edit-dialog {
+  width: min(1040px, 96vw);
+  max-height: 92vh;
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: 0 24px 70px rgba(23, 24, 26, 0.2);
+}
+
+.keypoint-edit-header,
+.keypoint-edit-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.keypoint-frame-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.keypoint-frame-row span {
+  min-width: 76px;
+  color: var(--ink-soft);
+  font-family: var(--font);
+  font-size: 11px;
+  text-align: right;
+}
+
+.keypoint-save-status {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.keypoint-edit-header h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+}
+
+.keypoint-edit-stage {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #1b1c1e;
+  isolation: isolate;
+}
+
+.keypoint-edit-stage video {
+  display: block;
+  width: 100%;
+  max-height: 68vh;
+  aspect-ratio: 16 / 9;
+  object-fit: contain;
+  background: #1b1c1e;
+  will-change: transform;
+}
+
+/* ---------- settings rail ---------- */
 
 .analysis-settings-surface {
   position: fixed;
-  inset: 0 0 0 auto;
+  inset: calc(var(--bar-h) + var(--tabs-h)) 0 0 auto;
   z-index: 30;
-  width: 390px;
+  width: 360px;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
   border-left: 1px solid var(--line);
-  border-radius: 0;
-  padding: 22px;
-  background: var(--charcoal);
+  padding: 0 0 16px;
+  background: var(--card);
+}
+
+.analysis-settings-title {
+  height: 42px;
+  margin: 0 0 14px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--card);
 }
 
 .analysis-settings-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .analysis-settings-toggle {
-  min-width: 62px;
+  min-width: 58px;
 }
 
 .analysis-settings-body {
   min-height: 0;
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
+  padding: 0 16px;
 }
 
 .analysis-settings-surface.is-collapsed {
-  inset: 16px 16px auto auto;
+  inset: calc(var(--bar-h) + var(--tabs-h) + 16px) 16px auto auto;
   width: auto;
   border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 12px 14px;
-  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.42);
-  background: rgba(13, 16, 19, 0.94);
-  backdrop-filter: blur(14px);
+  border-radius: var(--radius);
+  padding: 0;
+  box-shadow: 0 16px 40px rgba(23, 24, 26, 0.12);
 }
 
 .analysis-settings-surface.is-collapsed .analysis-settings-title {
+  height: 40px;
   margin-bottom: 0;
+  border-bottom: 0;
 }
 
 .analysis-settings-surface.is-collapsed .analysis-settings-body,
@@ -171,7 +396,7 @@ body.analysis-settings-collapsed .app-shell:has(.analysis-page) {
 .analysis-settings-scroll,
 .analysis-log,
 textarea[name="object_points"] {
-  scrollbar-color: rgba(215, 255, 67, 0.55) rgba(5, 8, 10, 0.95);
+  scrollbar-color: var(--line) transparent;
   scrollbar-width: thin;
 }
 
@@ -184,190 +409,24 @@ textarea[name="object_points"]::-webkit-scrollbar {
 .analysis-settings-scroll::-webkit-scrollbar-track,
 .analysis-log::-webkit-scrollbar-track,
 textarea[name="object_points"]::-webkit-scrollbar-track {
-  border-radius: 999px;
-  background: rgba(5, 8, 10, 0.95);
+  background: transparent;
 }
 
 .analysis-settings-scroll::-webkit-scrollbar-thumb,
 .analysis-log::-webkit-scrollbar-thumb,
 textarea[name="object_points"]::-webkit-scrollbar-thumb {
-  border: 2px solid rgba(5, 8, 10, 0.95);
+  border: 2px solid var(--card);
   border-radius: 999px;
-  background: rgba(215, 255, 67, 0.62);
+  background: var(--line);
 }
 
 .analysis-settings-scroll::-webkit-scrollbar-thumb:hover,
 .analysis-log::-webkit-scrollbar-thumb:hover,
 textarea[name="object_points"]::-webkit-scrollbar-thumb:hover {
-  background: var(--acid);
+  background: var(--faint);
 }
 
-.analysis-video-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 12px;
-}
-
-.analysis-video-grid.four-up {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.analysis-video-seek {
-  flex: 1;
-  min-width: 140px;
-}
-
-.analysis-video-timecode {
-  min-width: 150px;
-  color: var(--muted);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px;
-  font-weight: 800;
-  text-align: right;
-  white-space: nowrap;
-}
-
-.analysis-speed-control {
-  width: auto;
-  min-width: 96px;
-  display: grid;
-  gap: 4px;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 800;
-  text-transform: uppercase;
-}
-
-.analysis-speed-control select {
-  min-height: 34px;
-  padding: 7px 10px;
-  font-size: 12px;
-}
-
-  .analysis-video-card {
-    display: grid;
-    gap: 6px;
-    min-width: 0;
-  }
-
-  .analysis-video-frame {
-    position: relative;
-    overflow: hidden;
-    border-radius: 8px;
-    background: #05080a;
-  }
-  
-  .analysis-video-card video {
-    display: block;
-    width: 100%;
-    aspect-ratio: 16 / 9;
-    border: 1px solid rgba(246, 244, 233, 0.14);
-    border-radius: 8px;
-    background: #05080a;
-  }
-
-  .keypoint-edit-canvas {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-  }
-
-  .keypoint-edit-canvas.is-enabled {
-    cursor: grab;
-    pointer-events: auto;
-  }
-
-  .keypoint-edit-canvas.is-enabled:active {
-    cursor: grabbing;
-  }
-
-.keypoint-edit-modal[hidden] {
-  display: none;
-}
-
-.keypoint-edit-modal {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: rgba(5, 8, 10, 0.72);
-}
-
-.keypoint-edit-dialog {
-  width: min(1040px, 96vw);
-  max-height: 92vh;
-  display: grid;
-  gap: 12px;
-  padding: 14px;
-  border: 1px solid rgba(246, 244, 233, 0.16);
-  border-radius: 8px;
-  background: #0c1113;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
-}
-
-.keypoint-edit-header,
-.keypoint-edit-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  justify-content: space-between;
-  flex-wrap: wrap;
-}
-
-.keypoint-frame-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.keypoint-frame-row span {
-  min-width: 76px;
-  color: var(--muted);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px;
-  font-weight: 800;
-  text-align: right;
-}
-
-.keypoint-save-status {
-  margin-left: auto;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.keypoint-edit-header h3 {
-  margin: 0;
-  color: var(--text);
-  font-size: 16px;
-}
-
-.keypoint-edit-stage {
-  position: relative;
-  overflow: hidden;
-  border: 1px solid rgba(246, 244, 233, 0.14);
-  border-radius: 8px;
-  background: #05080a;
-  isolation: isolate;
-}
-
-.keypoint-edit-stage video {
-  display: block;
-  width: 100%;
-  max-height: 68vh;
-  aspect-ratio: 16 / 9;
-  object-fit: contain;
-  background: #05080a;
-  will-change: transform;
-}
-
-.analysis-video-card small {
-  color: var(--muted);
-}
+/* ---------- settings form ---------- */
 
 .analysis-config-form {
   display: grid;
@@ -377,32 +436,37 @@ textarea[name="object_points"]::-webkit-scrollbar-thumb:hover {
 
 .analysis-config-form fieldset {
   display: grid;
-  gap: 7px;
-  border: 1px solid rgba(246, 244, 233, 0.12);
-  border-radius: 8px;
-  padding: 9px;
+  gap: 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  padding: 10px;
+  background: var(--surface);
 }
 
 .analysis-config-form legend {
   padding: 0 6px;
-  color: var(--acid);
-  font-size: 11px;
-  font-weight: 900;
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: var(--track);
   text-transform: uppercase;
 }
 
 .analysis-config-form label {
   gap: 5px;
-  font-size: 10px;
-  line-height: 1.2;
+  font-size: 9px;
+  line-height: 1.3;
 }
 
 .analysis-config-form input,
 .analysis-config-form select {
-  min-height: 32px;
-  border-radius: 8px;
-  padding: 8px 10px;
+  height: 28px;
+  padding: 0 8px;
   font-size: 11px;
+}
+
+.analysis-config-form select {
+  padding-right: 22px;
 }
 
 .frame-range-control,
@@ -413,10 +477,11 @@ textarea[name="object_points"]::-webkit-scrollbar-thumb:hover {
 
 .frame-range-label-row,
 .segmented-config-control > span {
-  color: var(--ink);
-  font-size: 10px;
-  font-weight: 900;
-  line-height: 1.2;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: var(--track);
+  line-height: 1.3;
   text-transform: uppercase;
 }
 
@@ -432,17 +497,16 @@ textarea[name="object_points"]::-webkit-scrollbar-thumb:hover {
   position: absolute;
   left: 8px;
   right: 8px;
-  height: 4px;
-  border-radius: 999px;
+  height: 2px;
   background:
     linear-gradient(
       90deg,
-      rgba(246, 244, 233, 0.22) 0%,
-      rgba(246, 244, 233, 0.22) var(--frame-range-start, 0%),
-      #ff4d24 var(--frame-range-start, 0%),
-      #28b9ff var(--frame-range-end, 100%),
-      rgba(246, 244, 233, 0.22) var(--frame-range-end, 100%),
-      rgba(246, 244, 233, 0.22) 100%
+      var(--line) 0%,
+      var(--line) var(--frame-range-start, 0%),
+      var(--alert) var(--frame-range-start, 0%),
+      var(--accent) var(--frame-range-end, 100%),
+      var(--line) var(--frame-range-end, 100%),
+      var(--line) 100%
     );
 }
 
@@ -459,53 +523,53 @@ textarea[name="object_points"]::-webkit-scrollbar-thumb:hover {
 }
 
 .frame-range-slider input[type="range"]::-webkit-slider-runnable-track {
-  height: 4px;
+  height: 2px;
   background: transparent;
 }
 
 .frame-range-slider input[type="range"]::-webkit-slider-thumb {
-  width: 13px;
-  height: 13px;
+  width: 11px;
+  height: 11px;
   margin-top: -4px;
-  border: 2px solid #fff;
+  border: 1px solid #fff;
   border-radius: 50%;
-  background: var(--recording);
+  background: var(--alert);
   pointer-events: auto;
   appearance: none;
 }
 
 .frame-range-slider input[type="range"][data-frame-range-max]::-webkit-slider-thumb {
-  background: #28b9ff;
+  background: var(--accent);
 }
 
 .frame-range-slider input[type="range"]::-moz-range-track {
-  height: 4px;
+  height: 2px;
   background: transparent;
 }
 
 .frame-range-slider input[type="range"]::-moz-range-thumb {
   width: 11px;
   height: 11px;
-  border: 2px solid #fff;
+  border: 1px solid #fff;
   border-radius: 50%;
-  background: var(--recording);
+  background: var(--alert);
   pointer-events: auto;
 }
 
 .frame-range-slider input[type="range"][data-frame-range-max]::-moz-range-thumb {
-  background: #28b9ff;
+  background: var(--accent);
 }
 
 .frame-range-values {
   display: flex;
   justify-content: space-between;
-  color: var(--recording);
+  color: var(--alert);
   font-size: 9px;
-  font-weight: 900;
+  letter-spacing: 0.06em;
 }
 
 .frame-range-values span:last-child {
-  color: #28b9ff;
+  color: var(--accent);
 }
 
 .segmented-options {
@@ -515,63 +579,52 @@ textarea[name="object_points"]::-webkit-scrollbar-thumb:hover {
 }
 
 .segmented-options button {
-  min-height: 30px;
-  border: 1px solid rgba(246, 244, 233, 0.14);
-  border-radius: 5px;
-  background: #11161a;
-  color: var(--ink);
-  font: inherit;
-  font-size: 11px;
-  font-weight: 800;
+  min-height: 28px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--ink-soft);
+  font-family: var(--font);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
 }
 
 .segmented-options button.active {
-  border-color: #ff4d24;
-  background: rgba(255, 77, 36, 0.22);
-  color: #ff6b37;
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper);
 }
 
 .analysis-config-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 7px;
+  gap: 8px;
 }
 
 /* Nested config objects (Filtering > butterworth, hampel, ...) get the same boxed
    treatment as the Kinematics mode groups so each filter reads as its own section. */
-.analysis-config-subgroup {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 7px;
-  border: 1px solid rgba(202, 255, 39, 0.2);
-  border-radius: 8px;
-  padding: 9px;
-  background: rgba(202, 255, 39, 0.03);
-}
-
-.analysis-config-subgroup > strong {
-  grid-column: 1 / -1;
-  color: var(--acid);
-  font-size: 11px;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
+.analysis-config-subgroup,
 .analysis-config-mode-group {
   grid-column: 1 / -1;
   display: grid;
-  gap: 7px;
-  border: 1px solid rgba(202, 255, 39, 0.2);
-  border-radius: 8px;
-  padding: 9px;
-  background: rgba(202, 255, 39, 0.03);
+  grid-template-columns: 1fr;
+  gap: 8px;
+  border: 1px solid var(--line-soft);
+  border-left: 2px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px;
+  background: #fff;
 }
 
+.analysis-config-subgroup > strong,
 .analysis-config-mode-group > strong {
-  color: var(--acid);
-  font-size: 11px;
-  font-weight: 900;
+  grid-column: 1 / -1;
+  color: var(--ink-soft);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: var(--track);
   text-transform: uppercase;
 }
 
@@ -580,7 +633,7 @@ textarea[name="object_points"]::-webkit-scrollbar-thumb:hover {
 }
 
 .toggle-row {
-  min-height: 30px;
+  min-height: 28px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -588,9 +641,9 @@ textarea[name="object_points"]::-webkit-scrollbar-thumb:hover {
 }
 
 .analysis-config-form .toggle-row input[type="checkbox"] {
-  width: 14px;
-  height: 14px;
-  min-height: 14px;
+  width: 13px;
+  height: 13px;
+  min-height: 13px;
   padding: 0;
   flex: 0 0 auto;
 }
@@ -598,41 +651,265 @@ textarea[name="object_points"]::-webkit-scrollbar-thumb:hover {
 .analysis-run-button {
   width: 100%;
   margin-top: 14px;
-  min-height: 48px;
-  border: 1px solid rgba(215, 255, 67, 0.46);
-  background: var(--acid);
-  color: var(--charcoal);
-  box-shadow: 0 0 0 1px rgba(5, 8, 10, 0.42), 0 14px 34px rgba(215, 255, 67, 0.12);
+  min-height: 40px;
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper);
 }
 
 .analysis-run-button:hover:not(:disabled) {
-  border-color: var(--acid);
-  background: #e2ff5f;
+  background: #000;
 }
 
 .analysis-run-button:disabled {
-  border-color: rgba(246, 244, 233, 0.1);
-  background: #151a1f;
-  color: var(--muted);
-  box-shadow: none;
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--faint);
 }
+
+/* ---------- log ---------- */
 
 .analysis-log {
   width: 100%;
   min-width: 0;
   max-width: 100%;
-  min-height: 220px;
-  max-height: 360px;
+  min-height: 200px;
+  max-height: 340px;
   overflow: auto;
   margin: 0;
-  border: 1px solid rgba(246, 244, 233, 0.12);
-  border-radius: 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
   padding: 14px;
-  background: #05080a;
-  color: var(--ink);
+  background: var(--surface);
+  color: var(--ink-soft);
+  font-family: var(--font);
+  font-size: 11px;
+  line-height: 1.6;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* ---------- log hand-off to Results ---------- */
+
+.analysis-log-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin: 12px -18px -18px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--line-soft);
+  background: var(--surface);
+}
+
+.analysis-log-actions .button {
+  min-width: 130px;
+}
+
+/* ---------- results page ---------- */
+
+/* Directory and session share one row and wrap to two when the card gets too
+   narrow to hold both, rather than switching at a fixed breakpoint. */
+.results-session-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 14px;
+}
+
+.results-session-row .storage-form {
+  flex: 1 1 460px;
+  min-width: 380px;
+  margin-bottom: 0;
+  /* Path plus its button stay side by side even once the row has wrapped. */
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.results-session-row > label {
+  flex: 1 1 300px;
+  min-width: 260px;
+}
+
+/* ---------- report setup ---------- */
+
+/* Motion needs less room than the path and session pickers it shares a row with. */
+.report-motion-field {
+  flex: 0 1 220px;
+  min-width: 180px;
+}
+
+.report-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 18px -18px -18px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--line-soft);
+  background: var(--surface);
+}
+
+.report-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.report-status strong {
+  color: var(--ink);
+  font-weight: 500;
+  letter-spacing: var(--track);
+}
+
+.report-actions .button {
+  min-width: 130px;
+}
+
+/* ---------- kinematic results split ---------- */
+
+/* The 3D view and the signal charts read as one result, so they share a card:
+   pose on the left, kinematics on the right, stacked once the halves get cramped. */
+.kinematic-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.kinematic-split-pane {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+/* The pose pane hands its leftover height to the canvas, and the canvas is taken out
+   of flow so the row is sized by the signal pane rather than by the canvas itself. */
+.kinematic-split-pane.pose-pane {
+  grid-template-rows: auto minmax(0, 1fr);
+  align-content: stretch;
+}
+
+.kinematic-split .pose3d-canvas-wrap {
+  min-height: 260px;
+}
+
+.kinematic-split .pose3d-canvas-wrap canvas {
+  position: absolute;
+  inset: 0;
+  min-height: 0;
+}
+
+.kinematic-split-pane + .kinematic-split-pane {
+  padding-left: 18px;
+  border-left: 1px solid var(--line-soft);
+}
+
+.kinematic-split .analysis-result-toolbar {
+  gap: 10px;
+}
+
+.kinematic-split .pose3d-file-row {
+  width: 100%;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+@media (max-width: 1180px) {
+  .kinematic-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .kinematic-split-pane + .kinematic-split-pane {
+    padding-left: 0;
+    padding-top: 18px;
+    border-left: 0;
+    border-top: 1px solid var(--line-soft);
+  }
+
+  .kinematic-split .pose3d-canvas-wrap {
+    height: 360px;
+  }
+}
+
+/* ---------- gait parameter cards ---------- */
+
+.gait-parameter-groups {
+  display: grid;
+  gap: 22px;
+}
+
+.gait-parameter-group h3 {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+}
+
+.gait-parameter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+.gait-parameter-card {
+  display: grid;
+  align-content: space-between;
+  gap: 14px;
+  min-height: 92px;
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  background: #fff;
+}
+
+.gait-parameter-card header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.gait-parameter-card header span {
+  color: var(--ink-soft);
+  font-size: 10px;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+}
+
+.gait-parameter-card header small {
+  color: var(--faint);
+  font-size: 9px;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.gait-parameter-card strong {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--ink);
+  font-size: 28px;
+  font-weight: 300;
+  letter-spacing: 0.01em;
+  line-height: 1;
+}
+
+.gait-parameter-card strong em {
+  color: var(--muted);
+  font-size: 10px;
+  font-style: normal;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+}
+
+/* ---------- 3D result ---------- */
 
 .analysis-result-surface {
   display: grid;
@@ -655,10 +932,10 @@ textarea[name="object_points"]::-webkit-scrollbar-thumb:hover {
 }
 
 .pose3d-file-row span {
-  color: var(--text);
-  font-size: 12px;
-  font-weight: 900;
-  letter-spacing: 0;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: var(--track);
   text-transform: uppercase;
 }
 
@@ -669,21 +946,25 @@ textarea[name="object_points"]::-webkit-scrollbar-thumb:hover {
   min-width: 0;
 }
 
+/* Sized for "Pause" so toggling playback does not resize the button. */
+.pose3d-controls [data-pose3d-play] {
+  min-width: 64px;
+}
+
 .pose3d-frame-label {
   min-width: 72px;
-  color: var(--muted);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px;
-  font-weight: 800;
+  color: var(--ink-soft);
+  font-family: var(--font);
+  font-size: 11px;
   text-align: right;
 }
 
 .pose3d-canvas-wrap {
   position: relative;
   overflow: hidden;
-  border: 1px solid rgba(246, 244, 233, 0.14);
-  border-radius: 8px;
-  background: #05080a;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--surface);
 }
 
 .pose3d-canvas-wrap canvas {
@@ -703,13 +984,17 @@ textarea[name="object_points"]::-webkit-scrollbar-thumb:hover {
   display: grid;
   place-items: center;
   color: var(--muted);
-  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   pointer-events: none;
 }
 
 .pose3d-empty[hidden] {
   display: none;
 }
+
+/* ---------- kinematics ---------- */
 
 .kinematics-tabs {
   display: grid;
@@ -719,72 +1004,118 @@ textarea[name="object_points"]::-webkit-scrollbar-thumb:hover {
 .kinematics-tab-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 }
 
 .kinematics-tabs button {
-  min-height: 32px;
-  border: 1px solid rgba(246, 244, 233, 0.14);
+  min-height: 28px;
+  border: 1px solid var(--line);
   border-radius: 999px;
   padding: 0 13px;
-  background: #11161a;
+  background: #fff;
   color: var(--muted);
-  font-weight: 900;
+  font-family: var(--font);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   cursor: pointer;
 }
 
+.kinematics-tabs button:hover {
+  color: var(--ink);
+}
+
 .kinematics-tabs button.is-active {
-  border-color: rgba(215, 255, 67, 0.6);
-  background: rgba(215, 255, 67, 0.14);
-  color: var(--acid);
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper);
 }
 
 .kinematics-tabs .kinematics-clear-button {
   margin-left: auto;
-  border-color: rgba(246, 244, 233, 0.12);
-  color: var(--text);
+  color: var(--ink-soft);
 }
 
+/* A second row of signal cards would push the chart below the 3D view's bottom edge,
+   so the row scrolls sideways instead of wrapping. */
 .kinematics-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 10px;
+  display: flex;
+  gap: 8px;
+  /* `scroll` rather than `auto`: the gutter is always reserved, so a category with
+     few signals is exactly as tall as one that scrolls. */
+  overflow-x: scroll;
+  overflow-y: hidden;
+  padding-bottom: 8px;
+  scrollbar-color: var(--line) transparent;
+  scrollbar-width: thin;
+}
+
+.kinematics-grid::-webkit-scrollbar {
+  height: 8px;
+}
+
+.kinematics-grid::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.kinematics-grid::-webkit-scrollbar-thumb {
+  border: 2px solid var(--card);
+  border-radius: 999px;
+  background: var(--line);
+}
+
+.kinematics-grid::-webkit-scrollbar-thumb:hover {
+  background: var(--faint);
+}
+
+.kinematics-grid .empty {
+  align-self: center;
 }
 
 .kinematics-card {
-  min-height: 86px;
+  flex: 1 0 168px;
+  height: 78px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border: 1px solid rgba(246, 244, 233, 0.12);
-  border-radius: 8px;
-  padding: 14px;
-  background: #11161a;
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: #fff;
   color: var(--ink);
+  font-family: var(--font);
   text-align: left;
   cursor: pointer;
 }
 
 .kinematics-card:hover {
-  border-color: rgba(215, 255, 67, 0.55);
+  border-color: var(--faint);
+  border-top-color: var(--faint);
 }
 
 .kinematics-card.is-selected {
-  border-color: var(--kinematics-card-color);
-  background: color-mix(in srgb, var(--kinematics-card-color) 16%, #11161a);
-  box-shadow: inset 4px 0 0 var(--kinematics-card-color);
+  border-color: var(--line);
+  border-top-color: var(--kinematics-card-color);
+  background: #fff;
 }
 
 .kinematics-card span {
   display: grid;
-  gap: 4px;
+  gap: 7px;
+}
+
+.kinematics-card strong {
+  font-size: 15px;
+  font-weight: 300;
+  letter-spacing: 0.02em;
 }
 
 .kinematics-card small {
   color: var(--muted);
-  font-size: 11px;
-  font-weight: 800;
+  font-size: 9px;
+  letter-spacing: var(--track);
   text-transform: uppercase;
 }
 
@@ -796,17 +1127,17 @@ textarea[name="object_points"]::-webkit-scrollbar-thumb:hover {
 
 .kinematics-chart-title {
   color: var(--muted);
-  font-size: 12px;
-  font-weight: 900;
+  font-size: 10px;
+  letter-spacing: var(--track);
   text-transform: uppercase;
 }
 
 .kinematics-chart-panel canvas {
   width: 100%;
-  height: 260px;
-  border: 1px solid rgba(246, 244, 233, 0.12);
-  border-radius: 8px;
-  background: #05080a;
+  height: 320px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--surface);
 }
 
 @media (max-width: 980px) {
@@ -815,20 +1146,16 @@ textarea[name="object_points"]::-webkit-scrollbar-thumb:hover {
   }
 
   .analysis-settings-surface {
-    inset: 78px 16px auto auto;
-    width: min(390px, calc(100vw - 32px));
-    max-height: calc(100vh - 100px);
+    inset: calc(var(--bar-h) + var(--tabs-h) + 12px) 12px auto auto;
+    width: min(360px, calc(100vw - 24px));
+    max-height: calc(100vh - 120px);
     border: 1px solid var(--line);
-    border-left: 1px solid var(--line);
-    border-radius: 18px;
-    padding: 18px;
-    box-shadow: 0 26px 60px rgba(0, 0, 0, 0.46);
-    background: rgba(13, 16, 19, 0.94);
-    backdrop-filter: blur(14px);
+    border-radius: var(--radius);
+    box-shadow: 0 20px 48px rgba(23, 24, 26, 0.16);
   }
 
   .analysis-settings-surface.is-collapsed {
-    inset: 78px 16px auto auto;
+    inset: calc(var(--bar-h) + var(--tabs-h) + 12px) 12px auto auto;
     width: auto;
     max-height: none;
   }
@@ -841,10 +1168,7 @@ textarea[name="object_points"]::-webkit-scrollbar-thumb:hover {
     flex-wrap: wrap;
   }
 
-  .analysis-session-setup-row {
-    grid-template-columns: 1fr;
-  }
-
+  .analysis-session-setup-row,
   .analysis-result-toolbar {
     grid-template-columns: 1fr;
   }

@@ -155,107 +155,22 @@ class PipelineAnalysisResultGateway:
         temp_path.replace(output_path)
         return str(output_path)
 
-    def latest_kinematics_csv_file(self, session_path: str) -> str | None:
-        path = Path(session_path)
-        csv_files = [csv_path for csv_path in path.glob("*_keypoints_kinematics.csv") if csv_path.is_file()]
-        if not csv_files:
-            csv_files = [csv_path for csv_path in path.glob("*.csv") if csv_path.is_file()]
-        if not csv_files:
-            return None
-        return str(max(csv_files, key=lambda csv_path: csv_path.stat().st_mtime))
+    def kinematics_series(self, session_path: str) -> dict[str, list[float]]:
+        """Joint angles and angular velocities from the session's IK output."""
+        from pipelines.kinematics_series import kinematics_dataframe, resolve_mot_file
 
-    def read_csv_columns(self, csv_path: str) -> dict[str, list[float]]:
-        path = Path(csv_path)
-        if not path.is_file():
-            raise ValueError("kinematics_csv_not_found")
+        mot_path = resolve_mot_file(Path(session_path))
+        if mot_path is None:
+            return {}
+        df = kinematics_dataframe(mot_path, self._kinematics_filter())
+        return {column: df[column].tolist() for column in df.columns}
 
-        with path.open("r", encoding="utf-8", errors="replace", newline="") as handle:
-            reader = csv.DictReader(handle)
-            if not reader.fieldnames:
-                raise ValueError("invalid_csv_header")
-            columns = {field: [] for field in reader.fieldnames}
-            for row in reader:
-                for field in columns:
-                    try:
-                        value = float(row.get(field, "nan"))
-                    except ValueError:
-                        value = float("nan")
-                    columns[field].append(value)
-        return columns
+    @staticmethod
+    def _kinematics_filter() -> dict:
+        from pipelines.config import AnalysisConfig
 
-    def recalculate_kinematics_event_markers(self, csv_path: str) -> list[dict[str, float | int | str]]:
-        from pipelines.kinematics_csv import is_walking_motion
-        from pipelines.parameters import extract_pitching_events_from_dataframe, extract_walking_events_from_dataframe
-
-        try:
-            df = pd.read_csv(csv_path)
-            motion = _first_text_value(df, "motion").strip()
-            # "None" means inverse kinematics only: report the joint angles and angular
-            # velocities and nothing that interprets the movement.
-            if motion.lower() in ("", "none"):
-                return []
-            if is_walking_motion(motion):
-                walking_direction = _first_text_value(df, "walking_direction") or "-z"
-                return _walking_event_markers(extract_walking_events_from_dataframe(df, walking_direction))
-            if "hand" not in df.columns:
-                return []
-            hand_values = df["hand"].dropna()
-            if hand_values.empty:
-                return []
-            events = extract_pitching_events_from_dataframe(df, str(hand_values.iloc[0]), _infer_csv_fps(df))
-        except Exception:
-            return []
-
-        labels = {
-            "knee_high": ("KH", "Knee High"),
-            "mer": ("MER", "Max Shoulder External Rotation"),
-            "ball_release": ("BR", "Ball Release"),
-        }
-        markers: list[dict[str, float | int | str]] = []
-        for key, event in events.items():
-            label, description = labels[key]
-            time = event.get("time")
-            if time is None:
-                continue
-            marker: dict[str, float | int | str] = {
-                "key": key,
-                "label": label,
-                "description": description,
-                "time": float(time),
-            }
-            frame = event.get("frame")
-            if frame is not None:
-                marker["frame"] = int(frame)
-            markers.append(marker)
-        return markers
-
-
-def _walking_event_markers(events: dict[str, list[dict[str, float | int | str]]]) -> list[dict[str, float | int | str]]:
-    labels = {
-        "right_hc": ("Right HC", "Right Heel Contact"),
-        "right_to": ("Right TO", "Right Toe Off"),
-        "left_hc": ("Left HC", "Left Heel Contact"),
-        "left_to": ("Left TO", "Left Toe Off"),
-    }
-    markers: list[dict[str, float | int | str]] = []
-    for key, event_list in events.items():
-        label, description = labels[key]
-        for occurrence_index, event in enumerate(event_list, start=1):
-            time = event.get("time")
-            if time is None:
-                continue
-            marker: dict[str, float | int | str] = {
-                "key": f"{key}_{occurrence_index}",
-                "label": label,
-                "description": description,
-                "time": float(time),
-            }
-            frame = event.get("frame")
-            if frame is not None:
-                marker["frame"] = int(frame)
-            markers.append(marker)
-    return sorted(markers, key=lambda marker: float(marker["time"]))
-
+        kinematics = AnalysisConfig.defaults().to_dict().get("kinematics") or {}
+        return kinematics.get("filter") or {}
 
 def _first_text_value(df: pd.DataFrame, column: str) -> str:
     if column not in df.columns:
@@ -340,13 +255,3 @@ def _draw_keypoints_json(frame, json_path: Path, draw_bounding_box, draw_keypts,
     return draw_skel(frame, keypoints_array[:, :, 0], keypoints_array[:, :, 1])
 
 
-def _infer_csv_fps(df) -> float:
-    if "time" not in df.columns:
-        return 60.0
-
-    time_values = pd.to_numeric(df["time"], errors="coerce").to_numpy(dtype=float)
-    dt = np.diff(time_values)
-    dt = dt[np.isfinite(dt) & (dt > 0)]
-    if len(dt) == 0:
-        return 60.0
-    return 1.0 / float(np.median(dt))

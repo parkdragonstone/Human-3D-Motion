@@ -1,155 +1,31 @@
-"""Extract motion event frames from the combined kinematics CSV."""
+"""Extract gait event frames from 3D keypoints, along the direction of travel."""
 from __future__ import annotations
-
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from scipy.signal import find_peaks
 
 
-def extract_pitching_events(
-    csv_path: str | Path,
-    throwing_hand: str,
-    fps: float | int,
-) -> dict[str, dict[str, float | int | None]]:
-    df = pd.read_csv(csv_path)
-    return extract_pitching_events_from_dataframe(df, throwing_hand, fps)
-
-
-def extract_pitching_events_from_dataframe(
-    df: pd.DataFrame,
-    throwing_hand: str,
-    fps: float | int,
-) -> dict[str, dict[str, float | int | None]]:
-    df = df.reset_index(drop=True)
-    side = _throwing_side(throwing_hand)
-    lead_side = _opposite_side(side)
-    br_offset = _br_offset(fps)
-
-    knee_high_index = _max_value_index(df, f"keypoint_{lead_side}Knee_y")
-    mer_index = _max_value_index(df, f"arm_rot_{side.lower()}")
-    br_forward_index = _first_forward_wrist_index_after_elbow_passes_shoulder(
-        df,
-        mer_index,
-        shoulder_column=f"keypoint_{side}Shoulder_z",
-        elbow_column=f"keypoint_{side}Elbow_z",
-        wrist_column=f"keypoint_{side}Wrist_z",
-    )
-    ball_release_index = br_forward_index + br_offset
-    if ball_release_index >= len(df):
-        raise ValueError("Ball release frame is outside the CSV range")
-
-    return {
-        "knee_high": _event_at(df, knee_high_index),
-        "mer": _event_at(df, mer_index),
-        "ball_release": _event_at(df, ball_release_index),
-    }
-
-
-def extract_walking_events(
-    csv_path: str | Path,
-    walking_direction: str = "-z",
-) -> dict[str, list[dict[str, float | int | None]]]:
-    df = pd.read_csv(csv_path)
-    return extract_walking_events_from_dataframe(df, walking_direction)
+# A heel contact every 0.35 s is already a 170 steps/min cadence, so anything closer
+# together is ridge noise on the marker trace rather than a real event. Extrema also
+# have to stand out from the signal's own range to count.
+MIN_EVENT_INTERVAL_S = 0.35
+MIN_EVENT_PROMINENCE_RATIO = 0.12
 
 
 def extract_walking_events_from_dataframe(
     df: pd.DataFrame,
-    walking_direction: str = "-z",
+    heading: tuple[float, float] = (0.0, -1.0),
 ) -> dict[str, list[dict[str, float | int | None]]]:
+    """Heel contacts and toe offs, from each foot's reach ahead of the hip."""
     df = df.reset_index(drop=True)
-    axis, direction_sign = _walking_axis(walking_direction)
-    hip_column = f"keypoint_Hip_{axis}"
+    hip_ap = project_ap(df, "Hip", heading)
     return {
-        "right_hc": _events_from_local_extrema(
-            df,
-            _relative_ap(df, f"keypoint_RHeel_{axis}", hip_column, direction_sign),
-            "max",
-        ),
-        "right_to": _events_from_local_extrema(
-            df,
-            _relative_ap(df, f"keypoint_RBigToe_{axis}", hip_column, direction_sign),
-            "min",
-        ),
-        "left_hc": _events_from_local_extrema(
-            df,
-            _relative_ap(df, f"keypoint_LHeel_{axis}", hip_column, direction_sign),
-            "max",
-        ),
-        "left_to": _events_from_local_extrema(
-            df,
-            _relative_ap(df, f"keypoint_LBigToe_{axis}", hip_column, direction_sign),
-            "min",
-        ),
+        "right_hc": _events_from_local_extrema(df, project_ap(df, "RHeel", heading) - hip_ap, "max"),
+        "right_to": _events_from_local_extrema(df, project_ap(df, "RBigToe", heading) - hip_ap, "min"),
+        "left_hc": _events_from_local_extrema(df, project_ap(df, "LHeel", heading) - hip_ap, "max"),
+        "left_to": _events_from_local_extrema(df, project_ap(df, "LBigToe", heading) - hip_ap, "min"),
     }
-
-
-def _throwing_side(throwing_hand: str) -> str:
-    normalized = throwing_hand.strip().lower()
-    if normalized in {"right", "r"}:
-        return "R"
-    if normalized in {"left", "l"}:
-        return "L"
-    raise ValueError("throwing_hand must be 'right' or 'left'")
-
-
-def _opposite_side(side: str) -> str:
-    if side == "R":
-        return "L"
-    if side == "L":
-        return "R"
-    raise ValueError("side must be 'R' or 'L'")
-
-
-def _br_offset(fps: float | int) -> int:
-    try:
-        fps_value = float(fps)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("fps must be a positive number") from exc
-    if fps_value <= 0:
-        raise ValueError("fps must be a positive number")
-    if fps_value < 60:
-        return 1
-    if fps_value <= 120:
-        return 2
-    if fps_value <= 240:
-        return 4
-    return 5
-
-
-def _max_value_index(df: pd.DataFrame, column: str) -> int:
-    _require_columns(df, [column])
-    values = pd.to_numeric(df[column], errors="coerce")
-    valid_values = values.dropna()
-    if valid_values.empty:
-        raise ValueError(f"{column} has no numeric values")
-    return int(valid_values.idxmax())
-
-
-def _first_forward_wrist_index_after_elbow_passes_shoulder(
-    df: pd.DataFrame,
-    mer_index: int,
-    shoulder_column: str,
-    elbow_column: str,
-    wrist_column: str,
-) -> int:
-    _require_columns(df, [shoulder_column, elbow_column, wrist_column])
-    shoulder_z = pd.to_numeric(df[shoulder_column], errors="coerce")
-    elbow_z = pd.to_numeric(df[elbow_column], errors="coerce")
-    wrist_z = pd.to_numeric(df[wrist_column], errors="coerce")
-
-    elbow_forward_mask = elbow_z.iloc[mer_index + 1 :] < shoulder_z.iloc[mer_index + 1 :]
-    elbow_forward_indices = elbow_forward_mask[elbow_forward_mask].index
-    if elbow_forward_indices.empty:
-        raise ValueError("No elbow-forward frame found after MER")
-
-    elbow_forward_index = int(elbow_forward_indices[0])
-    wrist_forward_mask = wrist_z.iloc[elbow_forward_index + 1 :] < elbow_z.iloc[elbow_forward_index + 1 :]
-    wrist_forward_indices = wrist_forward_mask[wrist_forward_mask].index
-    if wrist_forward_indices.empty:
-        raise ValueError("No wrist-forward frame found after elbow passed shoulder")
-    return int(wrist_forward_indices[0])
 
 
 def _event_at(df: pd.DataFrame, index: int) -> dict[str, float | int | None]:
@@ -178,18 +54,36 @@ def _require_columns(df: pd.DataFrame, columns: list[str]) -> None:
         raise ValueError(f"Missing required columns: {missing_columns}")
 
 
-def _walking_axis(walking_direction: str) -> tuple[str, int]:
+def heading_from_direction(walking_direction: str) -> tuple[float, float]:
+    """Map an axis label to a ground-plane unit vector.
+
+    `-z` becomes (0, -1), which projects to `-z` exactly as the axis-indexed code did,
+    so a manual direction reproduces the previous numbers.
+    """
     normalized = str(walking_direction or "-z").strip().lower()
-    if normalized not in {"+x", "-x", "+z", "-z"}:
+    headings = {"+x": (1.0, 0.0), "-x": (-1.0, 0.0), "+z": (0.0, 1.0), "-z": (0.0, -1.0)}
+    if normalized not in headings:
         raise ValueError("walking_direction must be one of +x, -x, +z, -z")
-    return normalized[1], 1 if normalized[0] == "+" else -1
+    return headings[normalized]
 
 
-def _relative_ap(df: pd.DataFrame, marker_column: str, hip_column: str, direction_sign: int) -> pd.Series:
-    _require_columns(df, [marker_column, hip_column])
-    marker_ap = pd.to_numeric(df[marker_column], errors="coerce")
-    hip_ap = pd.to_numeric(df[hip_column], errors="coerce")
-    return direction_sign * (marker_ap - hip_ap)
+def project_ap(df: pd.DataFrame, marker: str, heading: tuple[float, float]) -> pd.Series:
+    """Marker position along the direction of travel."""
+    return _projected(df, marker, heading[0], heading[1])
+
+
+def project_ml(df: pd.DataFrame, marker: str, heading: tuple[float, float]) -> pd.Series:
+    """Marker position across the direction of travel."""
+    return _projected(df, marker, -heading[1], heading[0])
+
+
+def _projected(df: pd.DataFrame, marker: str, unit_x: float, unit_z: float) -> pd.Series:
+    x_column = f"keypoint_{marker}_x"
+    z_column = f"keypoint_{marker}_z"
+    _require_columns(df, [x_column, z_column])
+    x_values = pd.to_numeric(df[x_column], errors="coerce")
+    z_values = pd.to_numeric(df[z_column], errors="coerce")
+    return x_values * unit_x + z_values * unit_z
 
 
 def _events_from_local_extrema(
@@ -198,15 +92,28 @@ def _events_from_local_extrema(
     extrema_type: str,
 ) -> list[dict[str, float | int | None]]:
     numeric_values = values.to_numpy(dtype=float)
-    events: list[dict[str, float | int | None]] = []
-    for index in range(1, len(numeric_values) - 1):
-        previous_value = numeric_values[index - 1]
-        current_value = numeric_values[index]
-        next_value = numeric_values[index + 1]
-        if not np.isfinite([previous_value, current_value, next_value]).all():
-            continue
-        if extrema_type == "max" and current_value > previous_value and current_value > next_value:
-            events.append(_event_at(df, index))
-        elif extrema_type == "min" and current_value < previous_value and current_value < next_value:
-            events.append(_event_at(df, index))
-    return events
+    if len(numeric_values) < 3:
+        return []
+    signal = numeric_values if extrema_type == "max" else -numeric_values
+    finite = signal[np.isfinite(signal)]
+    if len(finite) == 0:
+        return []
+    signal = pd.Series(signal).interpolate(limit_direction="both").to_numpy(dtype=float)
+
+    span = float(np.max(finite) - np.min(finite))
+    prominence = span * MIN_EVENT_PROMINENCE_RATIO if span > 0 else None
+    distance = _minimum_peak_distance(df)
+    peaks, _properties = find_peaks(signal, distance=distance, prominence=prominence)
+    return [_event_at(df, int(index)) for index in peaks]
+
+
+def _minimum_peak_distance(df: pd.DataFrame) -> int | None:
+    if "time" not in df.columns:
+        return None
+    time_values = pd.to_numeric(df["time"], errors="coerce").to_numpy(dtype=float)
+    steps = np.diff(time_values)
+    steps = steps[np.isfinite(steps) & (steps > 0)]
+    if len(steps) == 0:
+        return None
+    sample_interval = float(np.median(steps))
+    return max(1, int(round(MIN_EVENT_INTERVAL_S / sample_interval)))

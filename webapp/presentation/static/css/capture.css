@@ -1,4 +1,4 @@
-﻿.field-row {
+.field-row {
   display: grid;
   grid-template-columns: 1.4fr 0.8fr 0.8fr 0.8fr;
   gap: 12px;
@@ -33,32 +33,46 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   align-items: end;
-  margin-bottom: 18px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line-soft);
+  margin-bottom: 16px;
 }
+
+.camera-settings-form .button {
+  height: 36px;
+}
+
+/* ---------- segmented control ---------- */
 
 .mode-picker {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
   grid-column: 1 / -1;
-  padding: 5px;
-  border: 1px solid rgba(246, 244, 233, 0.16);
-  border-radius: 999px;
-  background: #11161a;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  overflow: hidden;
 }
 
 .mode-picker label {
-  min-height: 46px;
+  min-height: 34px;
   display: grid;
   place-items: center;
-  border-radius: 999px;
-  cursor: pointer;
+  border-right: 1px solid var(--line-soft);
   color: var(--muted);
+  font-size: 10px;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.mode-picker label:last-child {
+  border-right: 0;
 }
 
 .mode-picker label.is-active {
-  background: var(--acid);
-  color: var(--charcoal);
+  background: var(--ink);
+  color: var(--paper);
 }
 
 .mode-picker input {
@@ -67,14 +81,16 @@
   pointer-events: none;
 }
 
+/* ---------- phone pairing ---------- */
+
 .phone-qr-panel {
   display: grid;
-  gap: 16px;
-  margin-top: 18px;
-  padding: 18px;
-  border: 1px solid rgba(215, 255, 67, 0.28);
-  border-radius: 16px;
-  background: rgba(8, 11, 14, 0.6);
+  gap: 14px;
+  margin-top: 4px;
+  padding: 16px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--surface);
 }
 
 .phone-qr-panel[hidden],
@@ -86,37 +102,44 @@
   display: none;
 }
 
-
 .panel-copy {
   display: grid;
   gap: 5px;
 }
 
+.panel-copy strong {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+}
+
 .panel-copy span {
   color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.02em;
 }
 
 .phone-qr-list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 12px;
+  gap: 10px;
 }
 
 .phone-qr-card {
   display: grid;
-  grid-template-columns: 96px 1fr;
+  grid-template-columns: 76px 1fr;
   gap: 14px;
   align-items: center;
-  padding: 14px;
-  border: 1px solid rgba(246, 244, 233, 0.16);
-  border-radius: 14px;
-  background: #11161a;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
 }
 
 .phone-qr-card img {
-  width: 96px;
-  height: 96px;
-  border-radius: 8px;
+  width: 76px;
+  height: 76px;
   background: #fff;
 }
 
@@ -126,35 +149,46 @@
 }
 
 .phone-qr-card strong {
-  font-size: 22px;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .phone-qr-card span {
   color: var(--muted);
-  text-transform: none;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .phone-qr-card a {
-  color: var(--acid);
+  color: var(--accent);
   text-decoration: none;
-  text-transform: none;
 }
+
+/* ---------- camera tiles ---------- */
 
 .camera-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
-  gap: 12px;
-  margin: 22px 0;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 10px;
+  margin: 18px 0;
 }
 
 .camera-tile {
   display: grid;
   grid-template-rows: auto auto;
-  gap: 12px;
-  border: 1px solid rgba(246, 244, 233, 0.16);
-  border-radius: 16px;
-  padding: 16px;
-  background: #151a1f;
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0;
+  background: #fff;
+  cursor: pointer;
+}
+
+.camera-tile:has(.camera-select:checked) {
+  border-color: var(--ink);
 }
 
 .camera-tile.is-recording {
@@ -173,21 +207,20 @@
 }
 
 .camera-index {
-  font-size: 9px;
-  font-weight: 900;
-  text-transform: none;
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
 }
 
 .live-view-frame {
   position: relative;
   overflow: hidden;
   display: block;
-  height: clamp(260px, 28vw, 360px);
-  border: 1px solid rgba(246, 244, 233, 0.16);
-  border-radius: 12px;
-  background:
-    linear-gradient(135deg, rgba(215, 255, 67, 0.12), rgba(0, 0, 0, 0.2)),
-    #090c0f;
+  height: clamp(240px, 26vw, 340px);
+  border-bottom: 1px solid var(--line-soft);
+  background: #1b1c1e;
 }
 
 .live-view-frame iframe {
@@ -195,7 +228,7 @@
   height: 100%;
   display: block;
   border: 0;
-  background: #090c0f;
+  background: #1b1c1e;
 }
 
 .live-view-phone-preview {
@@ -203,96 +236,142 @@
   height: 100%;
   display: block;
   object-fit: contain;
-  background: #050607;
+  background: #1b1c1e;
 }
 
 .live-view-message {
   height: 100%;
   display: grid;
   place-content: center;
-  gap: 10px;
-  padding: 22px;
+  gap: 8px;
+  padding: 20px;
+  background: var(--surface);
   text-align: center;
-  color: var(--muted);
 }
 
 .live-view-message strong {
-  color: var(--acid);
-  font-size: 24px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+}
+
+.live-view-message span {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
 }
 
 .camera-meta {
-  display: grid;
-  gap: 4px;
-  justify-items: start;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px;
+  background: var(--surface);
+}
+
+.camera-meta::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: #fff;
+}
+
+.camera-tile:has(.camera-select:checked) .camera-meta::before {
+  border-color: var(--ink);
+  background: var(--ink);
+}
+
+.camera-tile.is-recording .camera-meta::before {
+  border-color: var(--recording);
+  background: var(--recording);
 }
 
 .camera-name,
 .camera-state {
   color: var(--muted);
-  text-transform: none;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .camera-meta a {
-  color: var(--acid);
-  font-size: 13px;
+  color: var(--accent);
+  font-size: 11px;
   text-decoration: none;
-  text-transform: none;
+}
+
+/* ---------- record bar ---------- */
+
+/* Status reads first, the record control sits directly beneath it, and the timer
+   holds the right edge across both rows. */
+.action-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 16px;
+  row-gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line-soft);
 }
 
 .capture-action-status {
-  grid-column: 1 / -1;
-  min-height: 46px;
-  display: grid;
-  grid-template-columns: auto auto 1fr;
-  gap: 10px;
+  grid-area: 1 / 1;
+  min-height: 22px;
+  display: flex;
   align-items: center;
-  margin-bottom: 10px;
+  gap: 10px;
   color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .capture-action-status strong {
   color: var(--ink);
-}
-
-.action-bar {
-  display: grid;
-  grid-template-columns: minmax(170px, 220px) auto;
-  gap: 14px;
-  align-items: center;
+  font-weight: 500;
+  letter-spacing: var(--track);
 }
 
 .action-bar .button {
-  width: 100%;
+  grid-area: 2 / 1;
+  justify-self: start;
+  min-width: 150px;
+}
+
+.capture-recording-timer {
+  grid-area: 1 / 2 / 3 / 3;
+  justify-self: end;
 }
 
 .button.record {
-  min-height: 56px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  border-radius: 6px;
-  background: var(--acid);
-  color: var(--charcoal);
+  min-height: 40px;
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.button.record:hover:not(:disabled) {
+  background: #000;
 }
 
 .button.stop {
-  min-height: 56px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  border-radius: 6px;
+  min-height: 40px;
+  border-color: var(--recording);
   background: var(--recording);
   color: #fff;
 }
 
 .record-button-dot {
-  width: 11px;
-  height: 11px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: var(--charcoal);
+  background: var(--paper);
 }
 
 .button.stop .record-button-dot {
@@ -300,97 +379,159 @@
 }
 
 .capture-recording-timer {
-  color: #7f8589;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: clamp(32px, 4vw, 46px);
-  font-weight: 900;
-  letter-spacing: 0;
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: clamp(24px, 3vw, 34px);
+  font-weight: 300;
+  letter-spacing: 0.02em;
   line-height: 1;
   white-space: nowrap;
 }
 
+/* ---------- session list ---------- */
 
 .session-list {
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .session-card {
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.035);
   overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
 }
 
 .session-card-header {
-  min-height: 62px;
+  min-height: 46px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 14px 18px;
-  background: rgba(0, 0, 0, 0.18);
+  padding: 10px 14px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line-soft);
 }
 
 .session-subject,
 .session-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .session-subject strong {
-  font-size: 16px;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .session-subject span {
-  border: 1px solid rgba(255, 111, 24, 0.5);
-  border-radius: 4px;
-  padding: 4px 8px;
-  background: rgba(255, 111, 24, 0.12);
-  color: #ff6f18;
-  font-size: 12px;
-  font-weight: 900;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 9px;
+  color: var(--ink-soft);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .session-actions time {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
 }
 
 .session-analyze-button,
 .session-delete-button {
-  min-height: 32px;
+  min-height: 28px;
   display: inline-flex;
   align-items: center;
-  border-radius: 6px;
-  padding: 0 14px;
-  font-size: 12px;
-  font-weight: 900;
+  border-radius: var(--radius);
+  padding: 0 12px;
+  font-family: var(--font);
+  font-size: 10px;
+  letter-spacing: var(--track);
   text-decoration: none;
-}
-
-.session-analyze-button {
+  text-transform: uppercase;
   cursor: pointer;
 }
 
 .session-analyze-button {
-  border: 1px solid #ff5a12;
-  background: #ff5a12;
-  color: #fff;
+  border: 1px solid var(--ink);
+  background: var(--ink);
+  color: var(--paper);
 }
 
 .session-delete-button {
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line);
+  background: #fff;
   color: var(--muted);
-  cursor: pointer;
+}
+
+.session-delete-button:hover:not(:disabled) {
+  border-color: var(--alert);
+  color: var(--alert);
 }
 
 .session-delete-button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
 }
+
+.session-video-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.session-video-item {
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-right: 1px solid var(--line-soft);
+}
+
+.session-video-item:last-child {
+  border-right: 0;
+}
+
+.session-video-item div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.session-video-item strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-video-item small {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+
+.session-camera-tag {
+  flex: 0 0 auto;
+  border-radius: var(--radius);
+  padding: 4px 7px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* ---------- confirm modal ---------- */
 
 .confirm-modal-overlay {
   position: fixed;
@@ -399,7 +540,7 @@
   display: grid;
   place-items: center;
   padding: 24px;
-  background: rgba(5, 8, 10, 0.7);
+  background: rgba(23, 24, 26, 0.42);
 }
 
 .confirm-modal {
@@ -407,11 +548,11 @@
   display: grid;
   gap: 14px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--radius);
   padding: 22px;
-  background: var(--surface);
+  background: var(--card);
   color: var(--ink);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 20px 60px rgba(23, 24, 26, 0.16);
 }
 
 .confirm-modal h2 {
@@ -421,68 +562,26 @@
 .confirm-modal p {
   margin: 0;
   color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .confirm-modal-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 8px;
   margin-top: 4px;
 }
 
 .confirm-danger {
-  background: var(--recording);
+  border-color: var(--alert);
+  background: var(--alert);
   color: #fff;
 }
 
-.session-video-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+.confirm-danger:hover:not(:disabled) {
+  border-color: var(--alert);
 }
-
-.session-video-item {
-  min-height: 68px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 20px;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.session-video-item:last-child {
-  border-right: 0;
-}
-
-.session-video-item div {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.session-video-item strong {
-  overflow: hidden;
-  color: #fff;
-  font-size: 13px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.session-video-item small {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.session-camera-tag {
-  flex: 0 0 auto;
-  border-radius: 4px;
-  padding: 6px 8px;
-  background: #ff5a12;
-  color: #fff;
-  font-size: 11px;
-  font-weight: 950;
-}
-
 
 @media (max-width: 980px) {
   .field-row,
@@ -491,4 +590,5 @@
     grid-template-columns: 1fr;
     display: grid;
   }
+
 }

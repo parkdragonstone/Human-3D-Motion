@@ -106,15 +106,24 @@ interface KeypointFrame {
   people: KeypointPerson[];
 }
 
-const page = document.querySelector<HTMLElement>(".analysis-page");
+const page = document.querySelector<HTMLElement>(".analysis-page, .results-page, .report-page");
 const rootInput = document.querySelector<HTMLInputElement>("#analysisRootInput");
 const selectRootButton = document.querySelector<HTMLButtonElement>("[data-select-analysis-root]");
 const sessionSelect = document.querySelector<HTMLSelectElement>("[data-analysis-session-select]");
 const videoGrid = document.querySelector<HTMLElement>("[data-analysis-video-grid]");
+const metaSessionChip = document.querySelector<HTMLElement>("[data-analysis-meta-session]");
+const metaVideosChip = document.querySelector<HTMLElement>("[data-analysis-meta-videos]");
+const metaCountChip = document.querySelector<HTMLElement>("[data-analysis-meta-count]");
 const configForm = document.querySelector<HTMLFormElement>("[data-analysis-config-form]");
 const runButton = document.querySelector<HTMLButtonElement>("[data-run-analysis]");
 const resetConfigButton = document.querySelector<HTMLButtonElement>("[data-reset-analysis-config]");
 const logPanel = document.querySelector<HTMLElement>("[data-analysis-log]");
+const resultsLink = document.querySelector<HTMLAnchorElement>("[data-open-results]");
+const reportMotion = document.querySelector<HTMLSelectElement>("[data-report-motion]");
+const reportStatus = document.querySelector<HTMLElement>("[data-report-status]");
+const runReportButton = document.querySelector<HTMLButtonElement>("[data-run-report]");
+const reportParameters = document.querySelector<HTMLElement>("[data-report-parameters]");
+const reportParametersSource = document.querySelector<HTMLElement>("[data-report-parameters-source]");
 const overlayToggle = document.querySelector<HTMLInputElement>("[data-overlay-toggle]");
 const togglePlayButton = document.querySelector<HTMLButtonElement>("[data-toggle-play-videos]");
 const videoSeek = document.querySelector<HTMLInputElement>("[data-video-seek]");
@@ -185,8 +194,8 @@ let selectedKinematicsKind = "angle";
 let selectedKinematicsCategory = "pelvis";
 const selectedKinematicsSignals = new Set<string>();
 const kinematicsTimeseriesCache = new Map<string, KinematicsTimeseries>();
-const kinematicsChartColors = ["#d7ff43", "#4aa3ff", "#ff6b4a", "#f6d34a", "#b9f6a5", "#c879ff"];
-const kinematicsChartHeight = 260;
+const kinematicsChartColors = ["#2f3f5c", "#a4483c", "#5c7a5e", "#8a6d3b", "#6b5b95", "#3d7076"];
+const kinematicsChartHeight = 320;
 const keypointSkeletonPairs = [
   [0, 17], [18, 17], [18, 19], [18, 5], [18, 6], [5, 7], [7, 9], [6, 8], [8, 10],
   [19, 11], [19, 12], [11, 13], [13, 15], [12, 14], [14, 16], [15, 20], [20, 22],
@@ -220,8 +229,6 @@ const kinematicsConfigGroups = [
 ];
 
 const selectConfigOptions: Record<string, string[]> = {
-  "base.motion": ["None", "Baseball-Pitching", "Baseball-Hitting", "Walking"],
-  "base.walking_direction": ["+x", "-x", "+z", "-z"],
   "lifting.interpolation": ["linear", "slinear", "quadratic", "cubic", "none"],
   "lifting.sections_to_keep": ["all", "largest", "first", "last"],
   "lifting.fill_large_gaps_with": ["last_value", "nan", "zeros"],
@@ -243,8 +250,6 @@ const configFieldOrder: Record<string, string[]> = {
     "fill_large_gaps_with",
   ],
   base: [
-    "motion",
-    "walking_direction",
     "frame_range",
   ],
   pose: [
@@ -277,6 +282,183 @@ function log(message: string): void {
 
 function selectedSession(): CaptureSession | null {
   return sessions.find((session) => session.session_id === sessionSelect?.value) || null;
+}
+
+function updateAnalysisMeta(): void {
+  const session = selectedSession();
+  if (metaSessionChip) {
+    metaSessionChip.textContent = session ? `${session.subject.name} - ${session.session_id}` : "No session selected";
+    metaSessionChip.classList.toggle("is-live", Boolean(session));
+  }
+  if (metaVideosChip) {
+    const count = session?.videos.length || 0;
+    metaVideosChip.textContent = `${count} ${count === 1 ? "view" : "views"}`;
+  }
+  if (metaCountChip) {
+    metaCountChip.textContent = `${sessions.length} ${sessions.length === 1 ? "session" : "sessions"}`;
+  }
+  updateResultsLink(session);
+  updateReportControls();
+}
+
+/* The Results page reads the same root and session from the query string, so the
+   hand-off keeps whatever is selected here instead of resetting to the default. */
+function updateResultsLink(session: CaptureSession | null): void {
+  if (!resultsLink) return;
+  const params = new URLSearchParams();
+  const root = rootInput?.value || "";
+  if (root) params.set("root", root);
+  if (session) params.set("session_id", session.session_id);
+  const query = params.toString();
+  resultsLink.href = query ? `/results?${query}` : "/results";
+}
+
+interface GaitParameter {
+  parameter: string;
+  label: string;
+  side: string | null;
+  value: number | null;
+  unit: string;
+}
+
+interface GaitParameterResult {
+  available: boolean;
+  csv_file?: string;
+  parameters: GaitParameter[];
+  heading?: { degrees: number; source: string; confident: boolean };
+}
+
+/* Cards are grouped the way a gait report reads: how the walk was paced, how the
+   steps were shaped, then what the joints did. */
+const gaitParameterGroups: Array<{ title: string; keys: string[] }> = [
+  { title: "Walking Path", keys: ["path_heading", "path_confidence", "path_distance"] },
+  { title: "Spatiotemporal", keys: ["gait_speed", "cadence", "steps", "duration"] },
+  { title: "Step Geometry", keys: ["stride_length", "step_length", "step_width", "stride_time"] },
+  { title: "Cycle Phase", keys: ["stance_phase", "swing_phase", "double_support"] },
+  { title: "Kinematics", keys: ["peak_knee_flexion", "knee_rom", "hip_rom", "ankle_rom", "trunk_lean", "pelvic_obliquity"] },
+];
+
+function renderGaitParameters(result: GaitParameterResult | null): void {
+  if (!reportParameters) return;
+  if (reportParametersSource) {
+    reportParametersSource.textContent = result?.available ? result.csv_file || "" : "";
+  }
+  if (!result?.available || result.parameters.length === 0) {
+    reportParameters.innerHTML = `<p class="empty">Run the report to compute the summary.</p>`;
+    return;
+  }
+  const remaining = new Map(result.parameters.map((item, index) => [index, item]));
+  const groups = gaitParameterGroups.map((group) => {
+    const entries: GaitParameter[] = [];
+    remaining.forEach((item, index) => {
+      if (!group.keys.includes(item.parameter)) return;
+      entries.push(item);
+      remaining.delete(index);
+    });
+    return { title: group.title, entries };
+  });
+  const leftovers = Array.from(remaining.values());
+  if (leftovers.length > 0) groups.push({ title: "Other", entries: leftovers });
+
+  reportParameters.innerHTML = groups
+    .filter((group) => group.entries.length > 0)
+    .map((group) => `
+      <section class="gait-parameter-group">
+        <h3>${group.title}</h3>
+        <div class="gait-parameter-grid">
+          ${group.entries.map(renderGaitParameterCard).join("")}
+        </div>
+      </section>
+    `)
+    .join("");
+}
+
+function renderGaitParameterCard(item: GaitParameter): string {
+  const side = item.side ? `<small>${item.side}</small>` : "";
+  return `
+    <article class="gait-parameter-card">
+      <header>
+        <span>${item.label}</span>
+        ${side}
+      </header>
+      <strong>${formatGaitValue(item.value)}<em>${item.unit || ""}</em></strong>
+    </article>
+  `;
+}
+
+function formatGaitValue(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "--";
+  const magnitude = Math.abs(value);
+  if (magnitude >= 100) return value.toFixed(0);
+  if (magnitude >= 10) return value.toFixed(1);
+  return value.toFixed(2);
+}
+
+async function loadGaitParameters(): Promise<void> {
+  if (!reportParameters) return;
+  const session = selectedSession();
+  if (!session) {
+    renderGaitParameters(null);
+    return;
+  }
+  const params = new URLSearchParams({ session_path: session.session_path });
+  try {
+    renderGaitParameters(await fetchJson<GaitParameterResult>(`/api/report/parameters?${params.toString()}`));
+  } catch {
+    renderGaitParameters(null);
+  }
+}
+
+function renderReportStatus(state: "ready" | "recording" | "warning", title: string, detail: string): void {
+  if (!reportStatus) return;
+  reportStatus.innerHTML = `
+    <span class="status-dot ${state}"></span>
+    <strong>${title}</strong>
+    <span>${detail}</span>
+  `;
+}
+
+function updateReportControls(): void {
+  if (!runReportButton) return;
+  const session = selectedSession();
+  runReportButton.disabled = !session;
+  if (!session) {
+    renderReportStatus("warning", "No session", "Select a session to build the gait report");
+  } else {
+    renderReportStatus("ready", "Ready", `${session.subject.name} - ${session.session_id}`);
+  }
+  loadGaitParameters().catch(() => undefined);
+}
+
+async function runReport(): Promise<void> {
+  const session = selectedSession();
+  if (!session || !runReportButton) return;
+  runReportButton.disabled = true;
+  renderReportStatus("recording", "Running", "Building the gait report");
+  try {
+    const result = await postJson<GaitParameterResult & { motion: string; walking_direction: string }>("/api/report/run", {
+      session_path: session.session_path,
+      motion: reportMotion?.value || "",
+      // The heading is read off the walking path rather than declared up front.
+      walking_direction: "auto",
+    });
+    renderGaitParameters(result);
+    const heading = result.heading;
+    const detail = heading
+      ? `${result.parameters.length} parameters - heading ${heading.degrees.toFixed(1)}deg (${heading.source})`
+      : `${result.parameters.length} parameters`;
+    // A path the subject barely travelled cannot pin down a heading; say so rather
+    // than presenting the numbers as if they were solid.
+    if (heading && !heading.confident) {
+      renderReportStatus("warning", "Done", `${detail} - weak walking path, check the heading`);
+    } else {
+      renderReportStatus("ready", "Done", detail);
+    }
+  } catch (error) {
+    renderReportStatus("warning", "Failed", error instanceof Error ? error.message : "Report failed");
+  } finally {
+    runReportButton.disabled = !selectedSession();
+  }
 }
 
 async function loadConfig(): Promise<void> {
@@ -314,6 +496,7 @@ async function loadSessions(preferredSessionId = ""): Promise<void> {
 
 function renderVideos(): void {
   const session = selectedSession();
+  updateAnalysisMeta();
   if (!videoGrid) return;
   if (!session) {
     videoGrid.classList.remove("four-up");
@@ -483,14 +666,17 @@ function drawPose3D(): void {
   if (!ctx || !wrapper) return;
   const dpr = window.devicePixelRatio || 1;
   const width = wrapper.clientWidth || 640;
-  const height = Math.max(320, Math.min(520, Math.round(width * 0.55)));
+  // In the split card the wrapper is stretched to the signal pane, so follow its
+  // height; elsewhere fall back to a width-derived one.
+  const stretched = Math.round(wrapper.clientHeight || 0);
+  const height = stretched > 80 ? stretched : Math.max(320, Math.min(520, Math.round(width * 0.55)));
   pose3dCanvas.width = Math.round(width * dpr);
   pose3dCanvas.height = Math.round(height * dpr);
   pose3dCanvas.style.width = `${width}px`;
   pose3dCanvas.style.height = `${height}px`;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = "#05080a";
+  ctx.fillStyle = "#f8f7f3";
   ctx.fillRect(0, 0, width, height);
   if (!pose3dData || pose3dData.frames.length === 0) {
     if (pose3dEmpty) pose3dEmpty.hidden = false;
@@ -525,21 +711,21 @@ function drawPose3D(): void {
 
 function pose3DMarkerColor(marker: string): string {
   const side = pose3DMarkerSide(marker);
-  if (side === "augmented") return "rgba(185, 246, 165, 0.48)";
-  if (side === "right") return "#ff6b4a";
-  if (side === "left") return "#4aa3ff";
-  if (side === "center") return "#f6d34a";
-  return "#d7ff43";
+  if (side === "augmented") return "rgba(23, 24, 26, 0.3)";
+  if (side === "right") return "#a4483c";
+  if (side === "left") return "#2f3f5c";
+  if (side === "center") return "#8a6d3b";
+  return "#17181a";
 }
 
 function pose3DLineColor(markerA: string, markerB: string): string {
   const sideA = pose3DMarkerSide(markerA);
   const sideB = pose3DMarkerSide(markerB);
-  if (sideA === "augmented" || sideB === "augmented") return "rgba(185, 246, 165, 0.36)";
-  if (sideA === sideB && sideA === "right") return "rgba(255, 107, 74, 0.7)";
-  if (sideA === sideB && sideA === "left") return "rgba(74, 163, 255, 0.7)";
-  if (sideA === sideB && sideA === "center") return "rgba(246, 211, 74, 0.72)";
-  return "rgba(246, 244, 233, 0.42)";
+  if (sideA === "augmented" || sideB === "augmented") return "rgba(23, 24, 26, 0.22)";
+  if (sideA === sideB && sideA === "right") return "rgba(164, 72, 60, 0.78)";
+  if (sideA === sideB && sideA === "left") return "rgba(47, 63, 92, 0.78)";
+  if (sideA === sideB && sideA === "center") return "rgba(138, 109, 59, 0.78)";
+  return "rgba(23, 24, 26, 0.34)";
 }
 
 function pose3DMarkerSide(marker: string): "left" | "right" | "center" | "augmented" | "other" {
@@ -597,9 +783,9 @@ function drawPose3DAxes(ctx: CanvasRenderingContext2D, scene: { center: [number,
   if (!origin) return;
   const axisLength = 80 / Math.max(scene.scale, 0.001);
   [
-    { point: [axisLength, 0, 0] as [number, number, number], color: "#ff4d57", label: "X" },
-    { point: [0, axisLength, 0] as [number, number, number], color: "#63d87b", label: "Y" },
-    { point: [0, 0, axisLength] as [number, number, number], color: "#50a0ff", label: "Z" },
+    { point: [axisLength, 0, 0] as [number, number, number], color: "#a4483c", label: "X" },
+    { point: [0, axisLength, 0] as [number, number, number], color: "#5c7a5e", label: "Y" },
+    { point: [0, 0, axisLength] as [number, number, number], color: "#2f3f5c", label: "Z" },
   ].forEach((axis) => {
     const target = projectPose3D(axis.point, scene, width, height);
     if (!target) return;
@@ -751,8 +937,8 @@ function renderKinematicsCards(): void {
     return `
       <button class="kinematics-card ${active ? "is-selected" : ""}" type="button" data-kin-signal="${signal.key}" style="${active ? `--kinematics-card-color: ${color};` : ""}">
         <span>
-          <strong>${signal.label}</strong>
           <small>${signal.side}</small>
+          <strong>${signal.label}</strong>
         </span>
       </button>
     `;
@@ -813,7 +999,7 @@ function drawKinematicsChart(series: Array<{ signal: KinematicsSignal; data: Kin
   sizeKinematicsChartCanvas(width, height, dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = "#05080a";
+  ctx.fillStyle = "#f8f7f3";
   ctx.fillRect(0, 0, width, height);
   const prepared = series.map((item) => ({
     ...item,
@@ -822,7 +1008,7 @@ function drawKinematicsChart(series: Array<{ signal: KinematicsSignal; data: Kin
       .filter((point): point is { value: number; time: number } => point.value !== null),
   })).filter((item) => item.values.length >= 2);
   if (prepared.length === 0) {
-    ctx.fillStyle = "#aeb7b8";
+    ctx.fillStyle = "#85857e";
     ctx.fillText("No time series data", 18, 34);
     return;
   }
@@ -836,7 +1022,7 @@ function drawKinematicsChart(series: Array<{ signal: KinematicsSignal; data: Kin
   const valueSpan = Math.max(1, maxValue - minValue);
   const plotWidth = width - leftPad - pad;
   const plotHeight = height - pad * 2;
-  ctx.strokeStyle = "rgba(246, 244, 233, 0.16)";
+  ctx.strokeStyle = "rgba(23, 24, 26, 0.1)";
   ctx.lineWidth = 1;
   for (let index = 0; index <= 4; index += 1) {
     const y = pad + (plotHeight / 4) * index;
@@ -853,8 +1039,8 @@ function drawKinematicsChart(series: Array<{ signal: KinematicsSignal; data: Kin
   ctx.save();
   ctx.translate(14, height / 2);
   ctx.rotate(-Math.PI / 2);
-  ctx.fillStyle = "#aeb7b8";
-  ctx.font = "800 12px system-ui";
+  ctx.fillStyle = "#85857e";
+  ctx.font = "12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
   ctx.textAlign = "center";
   ctx.fillText(`Y (${prepared[0]?.data.unit || ""})`, 0, 0);
   ctx.restore();
@@ -941,20 +1127,54 @@ function drawKinematicsEventMarkers(
       x: bounds.leftPad + ((event.time - bounds.minTime) / Math.max(0.001, bounds.maxTime - bounds.minTime)) * bounds.plotWidth,
     }));
   visibleEvents.forEach(({ event, x }) => {
-    ctx.strokeStyle = "rgba(255, 214, 102, 0.38)";
+    ctx.strokeStyle = "rgba(176, 129, 47, 0.5)";
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(x, bounds.pad);
     ctx.lineTo(x, bounds.height - bounds.pad);
     ctx.stroke();
-    ctx.fillStyle = "rgba(255, 214, 102, 0.72)";
-    ctx.font = "900 11px system-ui";
+    ctx.fillStyle = "rgba(138, 109, 59, 0.95)";
+    ctx.font = "11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
     ctx.fillText(event.label, x + 5, bounds.pad + 14);
   });
   if (bounds.hoverX === null) return;
   const hovered = visibleEvents.find(({ x }) => Math.abs(x - bounds.hoverX!) <= 8);
   if (!hovered) return;
   drawKinematicsEventTooltip(ctx, hovered.event, hovered.x, bounds);
+}
+
+const kinematicsTooltipFont = "12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+const kinematicsTooltipInset = 10;
+
+/* Signal names vary a lot in length, so the tooltip is sized from the text it
+   actually holds and kept inside the canvas instead of using a fixed width. */
+function layoutKinematicsTooltip(
+  ctx: CanvasRenderingContext2D,
+  lines: string[],
+  anchorX: number,
+  tooltipHeight: number,
+  bounds: { pad: number; width: number; height: number },
+): { x: number; y: number; width: number; lines: string[] } {
+  ctx.font = kinematicsTooltipFont;
+  const available = Math.max(60, bounds.width - 16 - kinematicsTooltipInset * 2);
+  const fitted = lines.map((line) => truncateTextToWidth(ctx, line, available));
+  const textWidth = fitted.reduce((widest, line) => Math.max(widest, ctx.measureText(line).width), 0);
+  const width = Math.ceil(textWidth) + kinematicsTooltipInset * 2;
+  return {
+    x: Math.max(8, Math.min(bounds.width - width - 8, anchorX + 12)),
+    y: Math.max(8, Math.min(bounds.height - tooltipHeight - 8, bounds.pad + 10)),
+    width,
+    lines: fitted,
+  };
+}
+
+function truncateTextToWidth(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  let truncated = text;
+  while (truncated.length > 1 && ctx.measureText(`${truncated}...`).width > maxWidth) {
+    truncated = truncated.slice(0, -1);
+  }
+  return `${truncated}...`;
 }
 
 function drawKinematicsEventTooltip(
@@ -982,31 +1202,29 @@ function drawKinematicsEventTooltip(
     ctx.fillStyle = row.color;
     ctx.fill();
   });
-  const tooltipWidth = 300;
+  const frameText = event.frame === undefined ? "" : ` frame ${event.frame}`;
+  const tooltipLines = [
+    `${event.label} - ${event.description}`,
+    `t ${event.time.toFixed(3)}${frameText}`,
+    ...rows.map((row) => `${row.item.signal.label} ${row.item.signal.side}: ${row.nearest.value.toFixed(2)} ${row.item.data.unit}`),
+  ];
   const tooltipHeight = 64 + rows.length * 18;
-  const tooltipX = Math.min(bounds.width - tooltipWidth - 12, Math.max(bounds.leftPad + 8, x + 12));
-  const tooltipY = bounds.pad + 10;
-  ctx.fillStyle = "rgba(5, 8, 10, 0.94)";
-  ctx.strokeStyle = "rgba(255, 214, 102, 0.42)";
+  const tooltip = layoutKinematicsTooltip(ctx, tooltipLines, x, tooltipHeight, bounds);
+  const textX = tooltip.x + kinematicsTooltipInset;
+  ctx.fillStyle = "rgba(253, 252, 250, 0.96)";
+  ctx.strokeStyle = "rgba(176, 129, 47, 0.55)";
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.roundRect(tooltipX, tooltipY, tooltipWidth, tooltipHeight, 8);
+  ctx.roundRect(tooltip.x, tooltip.y, tooltip.width, tooltipHeight, 8);
   ctx.fill();
   ctx.stroke();
-  ctx.fillStyle = "#ffd666";
-  ctx.font = "900 12px system-ui";
-  ctx.fillText(`${event.label} - ${event.description}`, tooltipX + 10, tooltipY + 18);
-  ctx.fillStyle = "#dbe2e3";
-  ctx.font = "800 12px system-ui";
-  const frameText = event.frame === undefined ? "" : ` frame ${event.frame}`;
-  ctx.fillText(`t ${event.time.toFixed(3)}${frameText}`, tooltipX + 10, tooltipY + 42);
+  ctx.fillStyle = "#8a6d3b";
+  ctx.fillText(tooltip.lines[0], textX, tooltip.y + 18);
+  ctx.fillStyle = "#4c4e50";
+  ctx.fillText(tooltip.lines[1], textX, tooltip.y + 42);
   rows.forEach((row, index) => {
     ctx.fillStyle = row.color;
-    ctx.fillText(
-      `${row.item.signal.label} ${row.item.signal.side}: ${row.nearest.value.toFixed(2)} ${row.item.data.unit}`,
-      tooltipX + 10,
-      tooltipY + 62 + index * 18,
-    );
+    ctx.fillText(tooltip.lines[index + 2], textX, tooltip.y + 62 + index * 18);
   });
 }
 
@@ -1024,14 +1242,14 @@ function drawKinematicsTimeCursor(
 ): void {
   if (bounds.time < bounds.minTime || bounds.time > bounds.maxTime) return;
   const x = bounds.leftPad + ((bounds.time - bounds.minTime) / Math.max(0.001, bounds.maxTime - bounds.minTime)) * bounds.plotWidth;
-  ctx.strokeStyle = "#b8bec0";
+  ctx.strokeStyle = "#85857e";
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(x, bounds.pad);
   ctx.lineTo(x, bounds.height - bounds.pad);
   ctx.stroke();
-  ctx.fillStyle = "#b8bec0";
-  ctx.font = "900 11px system-ui";
+  ctx.fillStyle = "#85857e";
+  ctx.font = "11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
   ctx.fillText("3D", x + 6, bounds.pad + 12);
 }
 
@@ -1046,7 +1264,7 @@ function clearKinematicsChart(): void {
   const height = kinematicsChartHeight;
   sizeKinematicsChartCanvas(width, height, dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.fillStyle = "#05080a";
+  ctx.fillStyle = "#f8f7f3";
   ctx.fillRect(0, 0, width, height);
 }
 
@@ -1079,7 +1297,7 @@ function drawKinematicsHover(
   const rows = kinematicsRowsAtTime(series, hoverTime, bounds);
   if (rows.length === 0) return;
   const x = rows[0].x;
-  ctx.strokeStyle = "rgba(184, 190, 192, 0.55)";
+  ctx.strokeStyle = "rgba(23, 24, 26, 0.35)";
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(x, bounds.pad);
@@ -1091,27 +1309,25 @@ function drawKinematicsHover(
     ctx.fillStyle = row.color;
     ctx.fill();
   });
-  const tooltipWidth = 230;
-  const tooltipHeight = 24 + rows.length * 18;
-  const tooltipX = Math.min(bounds.width - tooltipWidth - 12, Math.max(bounds.leftPad + 8, x + 12));
-  const tooltipY = bounds.pad + 10;
-  ctx.fillStyle = "rgba(5, 8, 10, 0.92)";
-  ctx.strokeStyle = "rgba(246, 244, 233, 0.18)";
+  const tooltipLines = [
+    `t ${rows[0].nearest.time.toFixed(3)}`,
+    ...rows.map((row) => `${row.item.signal.label} ${row.item.signal.side}: ${row.nearest.value.toFixed(2)} ${row.item.data.unit}`),
+  ];
+  const tooltipHeight = 26 + rows.length * 18;
+  const tooltip = layoutKinematicsTooltip(ctx, tooltipLines, x, tooltipHeight, bounds);
+  const textX = tooltip.x + kinematicsTooltipInset;
+  ctx.fillStyle = "rgba(253, 252, 250, 0.96)";
+  ctx.strokeStyle = "rgba(23, 24, 26, 0.16)";
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.roundRect(tooltipX, tooltipY, tooltipWidth, tooltipHeight, 8);
+  ctx.roundRect(tooltip.x, tooltip.y, tooltip.width, tooltipHeight, 8);
   ctx.fill();
   ctx.stroke();
-  ctx.font = "800 12px system-ui";
-  ctx.fillStyle = "#aeb7b8";
-  ctx.fillText(`t ${rows[0].nearest.time.toFixed(3)}`, tooltipX + 10, tooltipY + 17);
+  ctx.fillStyle = "#85857e";
+  ctx.fillText(tooltip.lines[0], textX, tooltip.y + 17);
   rows.forEach((row, index) => {
     ctx.fillStyle = row.color;
-    ctx.fillText(
-      `${row.item.signal.label} ${row.item.signal.side}: ${row.nearest.value.toFixed(2)} ${row.item.data.unit}`,
-      tooltipX + 10,
-      tooltipY + 37 + index * 18,
-    );
+    ctx.fillText(tooltip.lines[index + 1], textX, tooltip.y + 37 + index * 18);
   });
 }
 
@@ -1307,7 +1523,6 @@ function renderConfigFields(prefix: string, values: Record<string, unknown>): st
 
 function renderBaseConfigFields(values: Record<string, unknown>): string {
   return orderedConfigFieldEntries("base", values)
-    .filter(([key]) => key !== "walking_direction" || values.motion === "Walking")
     .map(([key, value]) => renderConfigField(`base.${key}`, key, value))
     .join("");
 }
@@ -1380,6 +1595,7 @@ function frameRangeMax(): number {
 }
 
 function resetFrameRangeForSelectedSession(): void {
+  if (!configForm) return;
   setConfigPathValue(config, ["base", "frame_range"], [0, frameRangeMax()]);
   storeAnalysisConfig(config);
 }
@@ -1439,9 +1655,8 @@ function renderSegmentedControl(path: string, key: string, value: string, option
 }
 
 function renderSelectControl(path: string, key: string, value: string, options: string[]): string {
-  const label = path === "base.walking_direction" ? "Walking Direction" : key;
   return `
-    <label>${label}
+    <label>${key}
       <select data-config-path="${path}">
         ${options.map((option) => `<option value="${option}" ${option === value ? "selected" : ""}>${option}</option>`).join("")}
       </select>
@@ -1521,9 +1736,6 @@ function handleConfigFormInput(event: Event): void {
   }
   config = readConfigForm();
   storeAnalysisConfig(config);
-  if (target instanceof HTMLSelectElement && target.dataset.configPath === "base.motion") {
-    renderConfigForm();
-  }
 }
 
 function handleConfigFormClick(event: MouseEvent): void {
@@ -1906,12 +2118,12 @@ function drawKeypointOverlays(): void {
       const bounds = keypointPersonBounds(person, canvas);
       if (bounds) {
         const selected = keypointSelectedPersonIndex === person.person_index;
-        ctx.strokeStyle = selected ? "#ffffff" : "rgba(246, 244, 233, 0.45)";
+        ctx.strokeStyle = selected ? "#ffffff" : "rgba(242, 241, 236, 0.5)";
         ctx.lineWidth = selected ? 3 : 1.5;
         ctx.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height);
-        ctx.fillStyle = selected ? "rgba(255, 255, 255, 0.92)" : "rgba(5, 8, 10, 0.78)";
+        ctx.fillStyle = selected ? "rgba(255, 255, 255, 0.94)" : "rgba(23, 24, 26, 0.8)";
         ctx.fillRect(bounds.x, Math.max(0, bounds.y - 22), 76, 20);
-        ctx.fillStyle = selected ? "#05080a" : "#f6f4e9";
+        ctx.fillStyle = selected ? "#17181a" : "#f2f1ec";
         ctx.font = "12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
         ctx.fillText(`person ${person.person_index}`, bounds.x + 6, Math.max(14, bounds.y - 8));
       }
@@ -1934,7 +2146,7 @@ function drawKeypointOverlays(): void {
         ctx.arc(projected.x, projected.y, isHover ? 7 : 5, 0, Math.PI * 2);
         ctx.fillStyle = isHover ? "#ffffff" : keypointColor(kpIndex);
         ctx.fill();
-        ctx.strokeStyle = "#05080a";
+        ctx.strokeStyle = "#17181a";
         ctx.lineWidth = 2;
         ctx.stroke();
       });
@@ -1953,26 +2165,26 @@ function drawKeypointTooltip(ctx: CanvasRenderingContext2D, text: string, x: num
   const textWidth = ctx.measureText(text).width;
   const boxX = Math.max(6, Math.min(width - textWidth - 18, x + 10));
   const boxY = Math.max(6, y - 28);
-  ctx.fillStyle = "rgba(5, 8, 10, 0.88)";
+  ctx.fillStyle = "rgba(23, 24, 26, 0.88)";
   ctx.fillRect(boxX, boxY, textWidth + 12, 22);
-  ctx.fillStyle = "#f6f4e9";
+  ctx.fillStyle = "#f2f1ec";
   ctx.fillText(text, boxX + 6, boxY + 15);
 }
 
 function keypointColor(index: number): string {
-  if ([5, 7, 9, 11, 13, 15, 20, 22, 24].includes(index)) return "#4aa3ff";
-  if ([6, 8, 10, 12, 14, 16, 21, 23, 25].includes(index)) return "#ff6b4a";
-  return "#d7ff43";
+  if ([5, 7, 9, 11, 13, 15, 20, 22, 24].includes(index)) return "#5b8fd6";
+  if ([6, 8, 10, 12, 14, 16, 21, 23, 25].includes(index)) return "#d1614f";
+  return "#f2f1ec";
 }
 
 function keypointBoneColor(a: number, b: number): string {
-  const left = "#4aa3ff";
-  const right = "#ff6b4a";
+  const left = "#5b8fd6";
+  const right = "#d1614f";
   const colorA = keypointColor(a);
   const colorB = keypointColor(b);
-  if (colorA === left && colorB === left) return "rgba(74, 163, 255, 0.68)";
-  if (colorA === right && colorB === right) return "rgba(255, 107, 74, 0.68)";
-  return "rgba(215, 255, 67, 0.52)";
+  if (colorA === left && colorB === left) return "rgba(91, 143, 214, 0.75)";
+  if (colorA === right && colorB === right) return "rgba(209, 97, 79, 0.75)";
+  return "rgba(242, 241, 236, 0.6)";
 }
 
 function swapKeypointPairs(pairs: number[][]): void {
@@ -2363,6 +2575,11 @@ window.addEventListener("mouseup", () => {
   keypointPanDrag = null;
 });
 window.addEventListener("resize", redrawCanvases);
+/* The pose canvas is absolutely positioned, so it does not learn about its wrapper
+   growing or shrinking from a layout change on the other half of the card. */
+if (pose3dCanvas?.parentElement && typeof ResizeObserver !== "undefined") {
+  new ResizeObserver(() => drawPose3D()).observe(pose3dCanvas.parentElement);
+}
 kinematicsTabs?.addEventListener("click", (event) => {
   const kindButton = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-kin-kind]");
   if (kindButton) {
@@ -2496,6 +2713,10 @@ videoSeek?.addEventListener("change", () => {
   seeking = false;
 });
 videoSpeed?.addEventListener("change", setPlaybackSpeed);
+runReportButton?.addEventListener("click", () => {
+  runReport().catch(() => undefined);
+});
+reportMotion?.addEventListener("change", updateReportControls);
 runButton?.addEventListener("click", runAnalysis);
 resetConfigButton?.addEventListener("click", () => {
   resetConfigToDefault().catch((error) => log(error instanceof Error ? error.message : "Default config load failed"));
@@ -2511,7 +2732,9 @@ compactLayoutQuery.addEventListener("change", (event) => {
 applySettingsCollapsed(storedSettingsCollapsed(compactLayoutQuery.matches));
 
 const initialSessionId = page?.dataset.initialSessionId || "";
-loadConfig().catch((error) => log(error instanceof Error ? error.message : "Config load failed"));
+if (configForm) {
+  loadConfig().catch((error) => log(error instanceof Error ? error.message : "Config load failed"));
+}
 loadSessions(initialSessionId)
   .then(() => loadAnalysisResults())
   .catch((error) => log(error instanceof Error ? error.message : "Session load failed"));

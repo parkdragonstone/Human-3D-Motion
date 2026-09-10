@@ -1063,7 +1063,7 @@ function canvasToImagePoint(state: PointCanvasState, x: number, y: number): Imag
 
 function drawPointCanvas(state: PointCanvasState): void {
   state.ctx.clearRect(0, 0, state.canvas.width, state.canvas.height);
-  state.ctx.fillStyle = "#05080a";
+  state.ctx.fillStyle = "#f8f7f3";
   state.ctx.fillRect(0, 0, state.canvas.width, state.canvas.height);
   state.ctx.drawImage(state.image, state.offsetX, state.offsetY, state.image.width * state.scale, state.image.height * state.scale);
   state.points.forEach((point, index) => {
@@ -1077,13 +1077,13 @@ function drawPointCanvas(state: PointCanvasState): void {
     const isLast = session?.mode === "chessboard" ? pointId === lastPointId : index === state.points.length - 1;
     state.ctx.beginPath();
     state.ctx.arc(x, y, isFirst || isLast ? 6 : 5, 0, Math.PI * 2);
-    state.ctx.fillStyle = isFirst ? "#d7ff43" : isLast ? "#ffb347" : "#ffffff";
+    state.ctx.fillStyle = isFirst ? "#d1614f" : isLast ? "#5b8fd6" : "#ffffff";
     state.ctx.fill();
     state.ctx.lineWidth = 2;
-    state.ctx.strokeStyle = "#05080a";
+    state.ctx.strokeStyle = "#17181a";
     state.ctx.stroke();
     state.ctx.fillStyle = "#ffffff";
-    state.ctx.font = "700 13px system-ui";
+    state.ctx.font = "12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
     state.ctx.fillText(String(point.id ?? index), x + 8, y - 8);
   });
 }

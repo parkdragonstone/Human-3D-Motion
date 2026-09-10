@@ -14,8 +14,8 @@ from typing import Optional
 
 @dataclass
 class BaseConfig:
-    motion: str = "None"   # "None" means no analysis until a motion is chosen
-    walking_direction: str = "-z"
+    # Motion and its walking direction are chosen on the Report page, not here:
+    # the analysis pipeline runs the same way for every movement.
     frame_range: str = "auto"  # "auto" 또는 [start, end]; 변경하지 말 것
 
 
@@ -120,8 +120,6 @@ class AnalysisConfig:
         """기존 dict 기반 파이프라인과 호환되는 dict를 반환한다."""
         return {
             "base": {
-                "motion": self.base.motion,
-                "walking_direction": self.base.walking_direction,
                 "frame_range": self.base.frame_range,
             },
             "pose": {
@@ -221,8 +219,6 @@ class AnalysisConfig:
                 focal_ratio=float(auto_d.get("focal_ratio", 0.9)),
             ),
             base=BaseConfig(
-                motion=base_d.get("motion", "None"),
-                walking_direction=base_d.get("walking_direction", "-z"),
                 frame_range=base_d.get("frame_range", "auto"),
             ),
             pose=PoseConfig(

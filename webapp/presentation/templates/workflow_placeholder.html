@@ -2,18 +2,14 @@
 
 {% block title %}{{ title }} | H3DM{% endblock %}
 
-{% block content %}
-<section class="hero-panel compact">
-  <div>
-    <h1>{{ title }}</h1>
-  </div>
-</section>
+{% block context %}{{ title }}{% endblock %}
 
+{% block content %}
 <section class="capture-stack">
   <div class="work-surface">
     <div class="section-title">
       <span>01</span>
-      <h2>{{ title }} Workspace</h2>
+      <h2>{{ title }}</h2>
     </div>
     <p class="empty">This workspace is ready for the next workflow step.</p>
   </div>

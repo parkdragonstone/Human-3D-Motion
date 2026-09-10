@@ -19,6 +19,7 @@ from webapp.application.media_view_service import (
     SessionView,
     VideoView,
 )
+from webapp.application.report_service import ReportService
 from webapp.application.storage_root_service import StorageRootSelection, StorageRootService
 from webapp.application.capture_service import ActiveCapture, CaptureService
 from webapp.application.phone_capture_service import (
@@ -53,6 +54,7 @@ __all__ = [
     "PhoneDraft",
     "PhoneSlot",
     "PhoneVideoUpload",
+    "ReportService",
     "SessionView",
     "SessionQueryService",
     "StorageRootSelection",

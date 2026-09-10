@@ -2,19 +2,20 @@
 
 {% block title %}Analysis | H3DM{% endblock %}
 
+{% block context %}Motion Analysis{% endblock %}
+
+{% block topbar %}
+  <span class="meta-chip" data-analysis-meta-session>No session selected</span>
+  <span class="meta-chip plain" data-analysis-meta-videos>0 views</span>
+  <span class="meta-chip plain" data-analysis-meta-count>0 sessions</span>
+{% endblock %}
+
 {% block head %}
   <link rel="stylesheet" href="{{ static_asset('css/analysis.css') }}">
   <script defer type="module" src="{{ static_asset('dist/analysis.js') }}"></script>
 {% endblock %}
 
 {% block content %}
-<section class="hero-panel compact">
-  <div>
-    <h1>Motion<br>Analysis</h1>
-    <p>Analyze your motions</p>
-  </div>
-</section>
-
 <section class="capture-stack analysis-page"
   data-initial-root="{{ initial_root }}"
   data-initial-session-id="{{ initial_session_id }}"
@@ -59,7 +60,13 @@
           <span>02</span>
           <h2>Video</h2>
         </div>
-        <button class="button secondary compact-button" type="button" data-keypoint-edit-toggle>Change keypoint</button>
+        <div class="analysis-video-title-actions">
+          <label class="toggle-row">
+            <input type="checkbox" data-overlay-toggle>
+            <span>Overlay keypoint</span>
+          </label>
+          <button class="button secondary compact-button" type="button" data-keypoint-edit-toggle>Change keypoint</button>
+        </div>
       </div>
       <div class="analysis-video-grid" data-analysis-video-grid>
         <p class="empty">Select a session.</p>
@@ -68,12 +75,8 @@
         <button class="button secondary compact-button" type="button" data-toggle-play-videos>Play</button>
         <input class="analysis-video-seek" type="range" min="0" max="0" step="0.01" value="0" data-video-seek>
         <span class="analysis-video-timecode" data-video-timecode>0:00 / 0:00 (0 / 0)</span>
-        <label class="toggle-row">
-          <input type="checkbox" data-overlay-toggle>
-          <span>Overlay keypoint</span>
-        </label>
         <label class="analysis-speed-control">
-          Speed
+          <span>Speed</span>
           <select data-video-speed>
             <option value="0.25">0.25x</option>
             <option value="0.5">0.5x</option>
@@ -94,63 +97,11 @@
         <h2>Analysis Log</h2>
       </div>
       <pre class="analysis-log" data-analysis-log></pre>
-    </div>
-
-    <div class="work-surface analysis-result-surface">
-      <div class="section-title">
-        <span>04</span>
-        <h2>3D Keypoints</h2>
-      </div>
-      <div class="analysis-result-toolbar">
-        <label class="pose3d-file-row">
-          <span>TRC File</span>
-          <select data-pose3d-file-select>
-            <option value="">No 3D keypoint file</option>
-          </select>
-        </label>
-        <div class="pose3d-controls">
-          <button class="button secondary compact-button" type="button" data-pose3d-play>Play</button>
-          <button class="button secondary compact-button" type="button" data-pose3d-pip>PiP</button>
-          <input class="analysis-video-seek" type="range" min="0" max="0" step="1" value="0" data-pose3d-seek>
-          <span class="pose3d-frame-label" data-pose3d-frame-label>0 / 0</span>
-        </div>
-      </div>
-      <div class="pose3d-canvas-wrap">
-        <canvas data-pose3d-canvas></canvas>
-        <div class="pose3d-empty" data-pose3d-empty>Select a session with 3D keypoints.</div>
+      <div class="analysis-log-actions">
+        <a class="button solid" href="{{ url_for('results_page') }}" data-open-results>Results</a>
       </div>
     </div>
 
-    <div class="work-surface analysis-result-surface">
-      <div class="section-title">
-        <span>05</span>
-        <h2>Kinematics Results</h2>
-      </div>
-      <div class="kinematics-tabs" data-kinematics-tabs>
-        <div class="kinematics-tab-row">
-          <button type="button" class="is-active" data-kin-kind="angle">Angle</button>
-          <button type="button" data-kin-kind="velocity">Velocity</button>
-        </div>
-        <div class="kinematics-tab-row">
-          <button type="button" class="is-active" data-kin-category="pelvis">Pelvis</button>
-          <button type="button" data-kin-category="trunk">Trunk</button>
-          <button type="button" data-kin-category="hip_shoulder">Hip-Shoulder</button>
-          <button type="button" data-kin-category="hip">Hip</button>
-          <button type="button" data-kin-category="knee">Knee</button>
-          <button type="button" data-kin-category="ankle">Ankle</button>
-          <button type="button" data-kin-category="shoulder">Shoulder</button>
-          <button type="button" data-kin-category="elbow">Elbow</button>
-          <button type="button" class="kinematics-clear-button" data-clear-kinematics-selection>Clear All</button>
-        </div>
-      </div>
-      <div class="kinematics-grid" data-kinematics-grid>
-        <p class="empty">No kinematics results yet.</p>
-      </div>
-      <div class="kinematics-chart-panel">
-        <div class="kinematics-chart-title" data-kinematics-chart-title>Select a signal</div>
-        <canvas data-kinematics-chart></canvas>
-      </div>
-    </div>
   </div>
 </section>
 

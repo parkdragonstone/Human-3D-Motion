@@ -120,6 +120,21 @@ class CalibrationRunner(Protocol):
         ...
 
 
+class ReportRunner(Protocol):
+    def build_gait_parameters(
+        self,
+        session_path: str,
+        motion: str,
+        walking_direction: str,
+        subject_metadata: dict | None,
+        filter_config: dict | None,
+    ) -> dict:
+        ...
+
+    def read_gait_parameters(self, session_path: str) -> tuple[str, list[dict]] | None:
+        ...
+
+
 class AnalysisResultGateway(Protocol):
     def list_pose3d_files(self, session_path: str) -> list[str]:
         ...
@@ -142,11 +157,5 @@ class AnalysisResultGateway(Protocol):
     def render_pose_video_from_keypoints(self, session: CaptureSession, camera_label: str) -> str:
         ...
 
-    def latest_kinematics_csv_file(self, session_path: str) -> str | None:
-        ...
-
-    def read_csv_columns(self, csv_path: str) -> dict[str, list[float]]:
-        ...
-
-    def recalculate_kinematics_event_markers(self, csv_path: str) -> list[dict[str, float | int | str]]:
+    def kinematics_series(self, session_path: str) -> dict[str, list[float]]:
         ...

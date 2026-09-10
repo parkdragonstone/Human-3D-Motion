@@ -32,35 +32,29 @@ class AnalysisResultService:
     def render_pose_video_from_keypoints(self, session: CaptureSession, camera_label: str) -> Path:
         return Path(self._result_gateway.render_pose_video_from_keypoints(session, camera_label))
 
-    def latest_kinematics_csv_file(self, session_path: Path) -> Path | None:
-        csv_path = self._result_gateway.latest_kinematics_csv_file(str(session_path))
-        return Path(csv_path) if csv_path is not None else None
-
-    def read_csv_columns(self, csv_path: Path) -> dict[str, list[float]]:
-        return self._result_gateway.read_csv_columns(str(csv_path))
+    def kinematics_series(self, session_path: Path) -> dict[str, list[float]]:
+        return self._result_gateway.kinematics_series(str(session_path))
 
     def kinematics_summary(self, session_path: Path) -> dict:
-        csv_path = self.latest_kinematics_csv_file(session_path)
-        if csv_path is None:
-            return {"available": False, "signals": [], "unit": "deg"}
-        columns = self.read_csv_columns(csv_path)
+        columns = self.kinematics_series(session_path)
+        if not columns:
+            return {"available": False, "signals": [], "unit": "deg", "events": []}
         signals = [signal for signal in _kinematics_signals() if signal["key"] in columns]
         return {
             "available": True,
-            "file": csv_path.name,
+            "source": "kinematics/*.mot",
             "unit": "deg",
             "signals": signals,
-            "events": self.kinematics_event_markers(csv_path, columns),
+            "events": [],
         }
 
     def kinematics_timeseries(self, session_path: Path, signal: str) -> dict:
         signal_map = {item["key"]: item for item in _kinematics_signals()}
         if signal not in signal_map:
             raise ValueError("invalid_signal")
-        csv_path = self.latest_kinematics_csv_file(session_path)
-        if csv_path is None:
-            raise ValueError("kinematics_csv_not_found")
-        columns = self.read_csv_columns(csv_path)
+        columns = self.kinematics_series(session_path)
+        if not columns:
+            raise ValueError("kinematics_mot_not_found")
         if signal not in columns:
             raise ValueError("signal_not_found")
         return {
@@ -68,44 +62,6 @@ class AnalysisResultService:
             "time": _finite_or_null(columns.get("time", [])),
             "values": _finite_or_null(columns.get(signal, [])),
         }
-
-    def kinematics_event_markers(
-        self,
-        csv_path: Path,
-        columns: dict[str, list[float]],
-    ) -> list[dict[str, float | int | str]]:
-        recalculated = self.recalculate_kinematics_event_markers(csv_path)
-        if recalculated:
-            return recalculated
-        if not all(f"{key}_time" in columns for key in ("knee_high", "mer", "ball_release")):
-            return []
-        events = [
-            ("knee_high", "KH", "Knee High"),
-            ("mer", "MER", "Max Shoulder External Rotation"),
-            ("ball_release", "BR", "Ball Release"),
-        ]
-        markers: list[dict[str, float | int | str]] = []
-        for key, label, description in events:
-            frame = _first_finite(columns.get(f"{key}_frame", []))
-            time = _first_finite(columns.get(f"{key}_time", []))
-            if time is None:
-                continue
-            marker: dict[str, float | int | str] = {
-                "key": key,
-                "label": label,
-                "description": description,
-                "time": time,
-            }
-            if frame is not None:
-                marker["frame"] = int(frame)
-            markers.append(marker)
-        return markers
-
-    def recalculate_kinematics_event_markers(
-        self,
-        csv_path: Path,
-    ) -> list[dict[str, float | int | str]]:
-        return self._result_gateway.recalculate_kinematics_event_markers(str(csv_path))
 
 
 def _kinematics_signals() -> list[dict[str, str]]:
@@ -151,13 +107,6 @@ def _kinematics_signals() -> list[dict[str, str]]:
         for signal in angle_signals
     ])
     return signals
-
-
-def _first_finite(values: list[float]) -> float | None:
-    for value in values:
-        if isinstance(value, float) and math.isfinite(value):
-            return value
-    return None
 
 
 def _finite_or_null(values: list[float]) -> list[float | None]:

@@ -7,6 +7,7 @@ from webapp.infrastructure.analysis.pipeline_analysis_config_provider import Pip
 from webapp.infrastructure.analysis.pipeline_analysis_result_gateway import PipelineAnalysisResultGateway
 from webapp.infrastructure.analysis.pipeline_analysis_runner import PipelineAnalysisRunner
 from webapp.infrastructure.analysis.pipeline_calibration_runner import PipelineCalibrationRunner
+from webapp.infrastructure.analysis.pipeline_report_runner import PipelineReportRunner
 
 __all__ = [
     "OpenCvCalibrationBoardCornerDetector",
@@ -16,4 +17,5 @@ __all__ = [
     "PipelineAnalysisResultGateway",
     "PipelineAnalysisRunner",
     "PipelineCalibrationRunner",
+    "PipelineReportRunner",
 ]

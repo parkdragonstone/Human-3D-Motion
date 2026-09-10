@@ -2,6 +2,14 @@
 
 {% block title %}Calibration | H3DM{% endblock %}
 
+{% block context %}Camera Calibration{% endblock %}
+
+{% block topbar %}
+  <span class="meta-chip {% if cameras %}is-live{% endif %}" id="cameraCount">{{ cameras|length }} cameras detected</span>
+  <span class="meta-chip plain">{{ camera_settings.phone_frame_rate }} fps &middot; {{ camera_settings.phone_resolution }}p</span>
+  <span class="meta-chip plain">{{ calibrations|length }} calibrations</span>
+{% endblock %}
+
 {% block head %}
   <link rel="stylesheet" href="{{ static_asset('css/capture.css') }}">
   <link rel="stylesheet" href="{{ static_asset('css/calibration.css') }}">
@@ -10,13 +18,6 @@
 {% endblock %}
 
 {% block content %}
-<section class="hero-panel compact">
-  <div>
-    <h1>Camera<br>Calibration</h1>
-    <p class="hero-copy">Set up your camera configuration for accurate motion capture</p>
-  </div>
-</section>
-
 <section class="capture-stack">
   <div class="work-surface">
     <div class="section-title">

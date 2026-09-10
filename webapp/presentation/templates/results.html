@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+
+{% block title %}Results | H3DM{% endblock %}
+
+{% block context %}Results{% endblock %}
+
+{% block topbar %}
+  <span class="meta-chip" data-analysis-meta-session>No session selected</span>
+  <span class="meta-chip plain" data-analysis-meta-videos>0 views</span>
+  <span class="meta-chip plain" data-analysis-meta-count>0 sessions</span>
+{% endblock %}
+
+{% block head %}
+  <link rel="stylesheet" href="{{ static_asset('css/analysis.css') }}">
+  <script defer type="module" src="{{ static_asset('dist/analysis.js') }}"></script>
+{% endblock %}
+
+{% block content %}
+<section class="capture-stack results-page"
+  data-initial-root="{{ initial_root }}"
+  data-initial-session-id="{{ initial_session_id }}"
+>
+  <div class="work-surface">
+    <div class="section-title">
+      <span>01</span>
+      <h2>Session</h2>
+    </div>
+    <div class="results-session-row">
+      <form class="storage-form" data-analysis-root-form>
+        <label>
+          Session directory
+          <input id="analysisRootInput" name="session_root" value="{{ initial_root or storage_root }}" readonly required>
+        </label>
+        <button class="button secondary" type="button" data-select-analysis-root>Select Path</button>
+      </form>
+      <label>
+        Session
+        <select data-analysis-session-select>
+          <option value="">No session selected</option>
+        </select>
+      </label>
+    </div>
+  </div>
+
+  <div class="work-surface analysis-result-surface">
+    <div class="section-title">
+      <span>02</span>
+      <h2>Kinematic Results</h2>
+    </div>
+    <div class="kinematic-split">
+      <div class="kinematic-split-pane pose-pane">
+        <div class="analysis-result-toolbar">
+          <label class="pose3d-file-row">
+            <span>TRC File</span>
+            <select data-pose3d-file-select>
+              <option value="">No 3D keypoint file</option>
+            </select>
+          </label>
+          <div class="pose3d-controls">
+            <button class="button secondary compact-button" type="button" data-pose3d-play>Play</button>
+            <input class="analysis-video-seek" type="range" min="0" max="0" step="1" value="0" data-pose3d-seek>
+            <span class="pose3d-frame-label" data-pose3d-frame-label>0 / 0</span>
+            <button class="button secondary compact-button" type="button" data-pose3d-pip>PiP</button>
+          </div>
+        </div>
+        <div class="pose3d-canvas-wrap">
+          <canvas data-pose3d-canvas></canvas>
+          <div class="pose3d-empty" data-pose3d-empty>Select a session with 3D keypoints.</div>
+        </div>
+      </div>
+
+      <div class="kinematic-split-pane">
+        <div class="kinematics-tabs" data-kinematics-tabs>
+          <div class="kinematics-tab-row">
+            <button type="button" class="is-active" data-kin-kind="angle">Angle</button>
+            <button type="button" data-kin-kind="velocity">Velocity</button>
+            <button type="button" class="kinematics-clear-button" data-clear-kinematics-selection>Clear All</button>
+          </div>
+          <div class="kinematics-tab-row">
+            <button type="button" class="is-active" data-kin-category="pelvis">Pelvis</button>
+            <button type="button" data-kin-category="trunk">Trunk</button>
+            <button type="button" data-kin-category="hip_shoulder">Hip-Shoulder</button>
+            <button type="button" data-kin-category="hip">Hip</button>
+            <button type="button" data-kin-category="knee">Knee</button>
+            <button type="button" data-kin-category="ankle">Ankle</button>
+            <button type="button" data-kin-category="shoulder">Shoulder</button>
+            <button type="button" data-kin-category="elbow">Elbow</button>
+          </div>
+        </div>
+        <div class="kinematics-grid" data-kinematics-grid>
+          <p class="empty">No kinematics results yet.</p>
+        </div>
+        <div class="kinematics-chart-panel">
+          <div class="kinematics-chart-title" data-kinematics-chart-title>Select a signal</div>
+          <canvas data-kinematics-chart></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

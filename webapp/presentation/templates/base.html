@@ -8,26 +8,22 @@
     {% block head %}{% endblock %}
   </head>
   <body>
-    <aside class="app-nav">
-      <input class="app-menu-check" id="appMenuToggle" type="checkbox" aria-hidden="true">
-      <div class="app-nav-header">
-        <a class="brand" href="{{ url_for('capture_page') }}">
-          <img class="brand-mark" src="{{ url_for('app_logo') }}" alt="">
-          <span>H3DM</span>
-        </a>
-        <label class="app-menu-button" for="appMenuToggle" aria-label="Open navigation menu">
-          <span></span>
-          <span></span>
-          <span></span>
-        </label>
+    <header class="app-bar">
+      <div class="app-bar-brand">
+        <img class="brand-mark" src="{{ url_for('app_logo') }}" alt="">
+        <a class="brand" href="{{ url_for('capture_page') }}">H3DM</a>
+        <span class="brand-rule"></span>
+        <span class="brand-context">{% block context %}Human 3D Motion{% endblock %}</span>
       </div>
-      <nav>
-        <a class="{% if request.endpoint == 'capture_page' %}is-active{% endif %}" href="{{ url_for('capture_page') }}" {% if request.endpoint == 'capture_page' %}aria-current="page"{% endif %}>Capture</a>
-        <a class="{% if request.endpoint == 'calibration_page' %}is-active{% endif %}" href="{{ url_for('calibration_page') }}" {% if request.endpoint == 'calibration_page' %}aria-current="page"{% endif %}>Calibration</a>
-        <a class="{% if request.endpoint == 'analysis_page' %}is-active{% endif %}" href="{{ url_for('analysis_page') }}" {% if request.endpoint == 'analysis_page' %}aria-current="page"{% endif %}>Analysis</a>
-        <a class="{% if request.endpoint == 'report_page' %}is-active{% endif %}" href="{{ url_for('report_page') }}" {% if request.endpoint == 'report_page' %}aria-current="page"{% endif %}>Report</a>
-      </nav>
-    </aside>
+      <div class="app-bar-meta">{% block topbar %}{% endblock %}</div>
+    </header>
+    <nav class="app-tabs">
+      <a class="{% if request.endpoint == 'capture_page' %}is-active{% endif %}" href="{{ url_for('capture_page') }}" {% if request.endpoint == 'capture_page' %}aria-current="page"{% endif %}>Capture</a>
+      <a class="{% if request.endpoint == 'calibration_page' %}is-active{% endif %}" href="{{ url_for('calibration_page') }}" {% if request.endpoint == 'calibration_page' %}aria-current="page"{% endif %}>Calibration</a>
+      <a class="{% if request.endpoint == 'analysis_page' %}is-active{% endif %}" href="{{ url_for('analysis_page') }}" {% if request.endpoint == 'analysis_page' %}aria-current="page"{% endif %}>Analysis</a>
+      <a class="{% if request.endpoint == 'results_page' %}is-active{% endif %}" href="{{ url_for('results_page') }}" {% if request.endpoint == 'results_page' %}aria-current="page"{% endif %}>Results</a>
+      <a class="{% if request.endpoint == 'report_page' %}is-active{% endif %}" href="{{ url_for('report_page') }}" {% if request.endpoint == 'report_page' %}aria-current="page"{% endif %}>Report</a>
+    </nav>
     <main class="app-shell">
       {% block content %}{% endblock %}
     </main>

@@ -14,6 +14,7 @@ from webapp.application import (
     CaptureService,
     MediaViewService,
     PhoneCaptureService,
+    ReportService,
     SessionQueryService,
     StorageRootService,
 )
@@ -25,6 +26,7 @@ from webapp.infrastructure.analysis import (
     PipelineAnalysisResultGateway,
     PipelineAnalysisRunner,
     PipelineCalibrationRunner,
+    PipelineReportRunner,
 )
 from webapp.infrastructure.camera import ModeCameraController, PhoneCameraController, UrlCameraController
 from webapp.infrastructure.persistence import FileSessionCatalog, JsonSettingsRepository
@@ -41,6 +43,7 @@ class AppServices:
     phone_service: PhoneCaptureService
     calibration_service: CalibrationService
     calibration_recording_service: CalibrationRecordingService
+    report_service: ReportService
 
 
 def create_app_services() -> AppServices:
@@ -60,6 +63,11 @@ def create_app_services() -> AppServices:
         video_metadata_reader,
     )
     analysis_job_service = AnalysisJobService(analysis_service)
+    report_service = ReportService(
+        PipelineReportRunner(),
+        PipelineAnalysisConfigProvider(),
+        session_query_service,
+    )
     analysis_result_service = AnalysisResultService(PipelineAnalysisResultGateway())
     phone_service = PhoneCaptureService(settings)
     capture_recording_service = CaptureRecordingService(capture_service, phone_service)
@@ -105,6 +113,7 @@ def create_app_services() -> AppServices:
         phone_service=phone_service,
         calibration_service=calibration_service,
         calibration_recording_service=calibration_recording_service,
+        report_service=report_service,
     )
 
 
