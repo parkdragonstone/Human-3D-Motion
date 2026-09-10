@@ -988,6 +988,58 @@ function drawSelectedKinematicsChart(): void {
   drawKinematicsChart(series);
 }
 
+const KINEMATICS_LEGEND_ROW_HEIGHT = 16;
+const KINEMATICS_LEGEND_SWATCH_WIDTH = 14;
+const KINEMATICS_LEGEND_SWATCH_GAP = 6;
+const KINEMATICS_LEGEND_ENTRY_GAP = 18;
+
+interface KinematicsLegendEntry {
+  text: string;
+  color: string;
+  x: number;
+}
+
+/* Laid out before the plot is sized, so the chart can give up exactly the height the
+   legend needs instead of printing it over the curves. */
+function layoutKinematicsLegend(
+  ctx: CanvasRenderingContext2D,
+  entries: Array<{ text: string; color: string }>,
+  availableWidth: number,
+): KinematicsLegendEntry[][] {
+  ctx.font = kinematicsTooltipFont;
+  const rows: KinematicsLegendEntry[][] = [[]];
+  let cursor = 0;
+  entries.forEach((entry) => {
+    const entryWidth = KINEMATICS_LEGEND_SWATCH_WIDTH + KINEMATICS_LEGEND_SWATCH_GAP + ctx.measureText(entry.text).width;
+    if (cursor > 0 && cursor + entryWidth > availableWidth) {
+      rows.push([]);
+      cursor = 0;
+    }
+    rows[rows.length - 1].push({ ...entry, x: cursor });
+    cursor += entryWidth + KINEMATICS_LEGEND_ENTRY_GAP;
+  });
+  return rows;
+}
+
+function drawKinematicsLegend(
+  ctx: CanvasRenderingContext2D,
+  rows: KinematicsLegendEntry[][],
+  left: number,
+  top: number,
+): void {
+  ctx.font = kinematicsTooltipFont;
+  ctx.textAlign = "left";
+  rows.forEach((row, rowIndex) => {
+    const baseline = top + rowIndex * KINEMATICS_LEGEND_ROW_HEIGHT;
+    row.forEach((entry) => {
+      ctx.fillStyle = entry.color;
+      ctx.fillRect(left + entry.x, baseline - 4, KINEMATICS_LEGEND_SWATCH_WIDTH, 2);
+      ctx.fillStyle = "#4c4e50";
+      ctx.fillText(entry.text, left + entry.x + KINEMATICS_LEGEND_SWATCH_WIDTH + KINEMATICS_LEGEND_SWATCH_GAP, baseline);
+    });
+  });
+}
+
 function drawKinematicsChart(series: Array<{ signal: KinematicsSignal; data: KinematicsTimeseries }>): void {
   if (!kinematicsChart) return;
   const ctx = kinematicsChart.getContext("2d");
@@ -1021,7 +1073,16 @@ function drawKinematicsChart(series: Array<{ signal: KinematicsSignal; data: Kin
   const leftPad = 42;
   const valueSpan = Math.max(1, maxValue - minValue);
   const plotWidth = width - leftPad - pad;
-  const plotHeight = height - pad * 2;
+  const legendRows = layoutKinematicsLegend(
+    ctx,
+    prepared.map((item, index) => ({
+      text: `${item.signal.label} ${item.signal.side}`,
+      color: kinematicsChartColors[index % kinematicsChartColors.length],
+    })),
+    plotWidth,
+  );
+  const plotBottom = height - pad - legendRows.length * KINEMATICS_LEGEND_ROW_HEIGHT;
+  const plotHeight = plotBottom - pad;
   ctx.strokeStyle = "rgba(23, 24, 26, 0.1)";
   ctx.lineWidth = 1;
   for (let index = 0; index <= 4; index += 1) {
@@ -1033,11 +1094,11 @@ function drawKinematicsChart(series: Array<{ signal: KinematicsSignal; data: Kin
   }
   ctx.beginPath();
   ctx.moveTo(leftPad, pad);
-  ctx.lineTo(leftPad, height - pad);
-  ctx.lineTo(width - pad, height - pad);
+  ctx.lineTo(leftPad, plotBottom);
+  ctx.lineTo(width - pad, plotBottom);
   ctx.stroke();
   ctx.save();
-  ctx.translate(14, height / 2);
+  ctx.translate(14, pad + plotHeight / 2);
   ctx.rotate(-Math.PI / 2);
   ctx.fillStyle = "#85857e";
   ctx.font = "12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
@@ -1050,14 +1111,13 @@ function drawKinematicsChart(series: Array<{ signal: KinematicsSignal; data: Kin
     ctx.beginPath();
     item.values.forEach((point, index) => {
       const x = leftPad + ((point.time - minTime) / Math.max(0.001, maxTime - minTime)) * plotWidth;
-      const y = height - pad - ((point.value - minValue) / valueSpan) * plotHeight;
+      const y = plotBottom - ((point.value - minValue) / valueSpan) * plotHeight;
       if (index === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     });
     ctx.stroke();
-    ctx.fillStyle = kinematicsChartColors[seriesIndex % kinematicsChartColors.length];
-    ctx.fillText(`${item.signal.label} ${item.signal.side}`, pad + 8, pad + 16 + seriesIndex * 16);
   });
+  drawKinematicsLegend(ctx, legendRows, leftPad, plotBottom + 18);
   const currentTime = pose3DCurrentTime();
   if (currentTime !== null) {
     drawKinematicsTimeCursor(ctx, {
@@ -1067,6 +1127,7 @@ function drawKinematicsChart(series: Array<{ signal: KinematicsSignal; data: Kin
       leftPad,
       pad,
       plotWidth,
+      plotBottom,
       height,
     });
   }
@@ -1081,6 +1142,7 @@ function drawKinematicsChart(series: Array<{ signal: KinematicsSignal; data: Kin
       pad,
       plotWidth,
       plotHeight,
+      plotBottom,
       width,
       height,
     });
@@ -1089,6 +1151,7 @@ function drawKinematicsChart(series: Array<{ signal: KinematicsSignal; data: Kin
     series: prepared,
     events: kinematicsSummary?.events || [],
     hoverX: kinematicsHoverX,
+    plotBottom,
     minTime,
     maxTime,
     minValue,
@@ -1116,6 +1179,7 @@ function drawKinematicsEventMarkers(
     pad: number;
     plotWidth: number;
     plotHeight: number;
+    plotBottom: number;
     width: number;
     height: number;
   },
@@ -1131,7 +1195,7 @@ function drawKinematicsEventMarkers(
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(x, bounds.pad);
-    ctx.lineTo(x, bounds.height - bounds.pad);
+    ctx.lineTo(x, bounds.plotBottom);
     ctx.stroke();
     ctx.fillStyle = "rgba(138, 109, 59, 0.95)";
     ctx.font = "11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
@@ -1153,7 +1217,7 @@ function layoutKinematicsTooltip(
   lines: string[],
   anchorX: number,
   tooltipHeight: number,
-  bounds: { pad: number; width: number; height: number },
+  bounds: { pad: number; width: number; plotBottom: number },
 ): { x: number; y: number; width: number; lines: string[] } {
   ctx.font = kinematicsTooltipFont;
   const available = Math.max(60, bounds.width - 16 - kinematicsTooltipInset * 2);
@@ -1162,7 +1226,7 @@ function layoutKinematicsTooltip(
   const width = Math.ceil(textWidth) + kinematicsTooltipInset * 2;
   return {
     x: Math.max(8, Math.min(bounds.width - width - 8, anchorX + 12)),
-    y: Math.max(8, Math.min(bounds.height - tooltipHeight - 8, bounds.pad + 10)),
+    y: Math.max(8, Math.min(bounds.plotBottom - tooltipHeight - 8, bounds.pad + 10)),
     width,
     lines: fitted,
   };
@@ -1191,6 +1255,7 @@ function drawKinematicsEventTooltip(
     pad: number;
     plotWidth: number;
     plotHeight: number;
+    plotBottom: number;
     width: number;
     height: number;
   },
@@ -1237,6 +1302,7 @@ function drawKinematicsTimeCursor(
     leftPad: number;
     pad: number;
     plotWidth: number;
+    plotBottom: number;
     height: number;
   },
 ): void {
@@ -1246,7 +1312,7 @@ function drawKinematicsTimeCursor(
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(x, bounds.pad);
-  ctx.lineTo(x, bounds.height - bounds.pad);
+  ctx.lineTo(x, bounds.plotBottom);
   ctx.stroke();
   ctx.fillStyle = "#85857e";
   ctx.font = "11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
@@ -1289,6 +1355,7 @@ function drawKinematicsHover(
     pad: number;
     plotWidth: number;
     plotHeight: number;
+    plotBottom: number;
     width: number;
     height: number;
   },
@@ -1301,7 +1368,7 @@ function drawKinematicsHover(
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(x, bounds.pad);
-  ctx.lineTo(x, bounds.height - bounds.pad);
+  ctx.lineTo(x, bounds.plotBottom);
   ctx.stroke();
   rows.forEach((row) => {
     ctx.beginPath();
@@ -1343,6 +1410,7 @@ function kinematicsRowsAtTime(
     pad: number;
     plotWidth: number;
     plotHeight: number;
+    plotBottom: number;
     height: number;
   },
 ): Array<{
@@ -1357,7 +1425,7 @@ function kinematicsRowsAtTime(
       Math.abs(point.time - targetTime) < Math.abs(best.time - targetTime) ? point : best
     ), item.values[0]);
     const x = bounds.leftPad + ((nearest.time - bounds.minTime) / Math.max(0.001, bounds.maxTime - bounds.minTime)) * bounds.plotWidth;
-    const y = bounds.height - bounds.pad - ((nearest.value - bounds.minValue) / bounds.valueSpan) * bounds.plotHeight;
+    const y = bounds.plotBottom - ((nearest.value - bounds.minValue) / bounds.valueSpan) * bounds.plotHeight;
     const color = kinematicsChartColors[index % kinematicsChartColors.length];
     return { item, nearest, x, y, color };
   });

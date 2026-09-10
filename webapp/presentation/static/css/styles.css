@@ -165,7 +165,8 @@ body {
   align-items: center;
   margin-bottom: -1px;
   padding: 0 15px;
-  border-bottom: 1px solid transparent;
+  /* Transparent here too, so the active rule does not change the tab's height. */
+  border-bottom: 2px solid transparent;
   color: var(--muted);
   font-size: 11px;
   letter-spacing: var(--track);
@@ -182,9 +183,12 @@ body {
   color: var(--ink);
 }
 
+/* Full-strength ink against faint siblings, plus a rule thick enough to read at a
+   glance - the page you are on should be obvious without hunting. */
 .app-tabs a.is-active {
   border-bottom-color: var(--ink);
   color: var(--ink);
+  font-weight: 600;
 }
 
 /* ---------- shell ---------- */
