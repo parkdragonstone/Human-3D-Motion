@@ -8,6 +8,7 @@
 .bkit/
 
 AGENTS.md
+docs/
 node_modules/
 build/
 dist/
