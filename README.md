@@ -50,21 +50,12 @@ npm run build:ts
 
 ### Pose models
 
-Download the model files from Google Drive:
+Download the model files from Google Drive: [pre-trained](https://drive.google.com/uc?export=download&id=1pTMlT4czh1uv_pwM69p71C3RDlpmPUB4&confirm=t)
 
-```text
-https://drive.google.com/drive/folders/1aJ6LuDQF4ahWF9E_gj_r4981sVExRAN8?usp=sharing
-```
-
-Place the downloaded `models` folder here:
+Place the downloaded `models` folder here and expects this layout:
 
 ```text
 pipelines/models
-```
-
-The pose pipeline expects this layout:
-
-```text
 pipelines/models/normal/detector_end2end.onnx   YOLOX-m  (COCO)
 pipelines/models/normal/rtmpose_end2end.onnx    RTMPose-m
 ```
@@ -75,10 +66,6 @@ The detector is YOLOX's own ONNX release and can be re-fetched directly; save it
 ```text
 https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_m.onnx
 ```
-
-Use this export rather than an mmdeploy ONNX SDK one. The SDK builds bake an NMS module
-into the graph, which CoreML mis-compiles: on macOS the detector then falls back to CPU and
-runs about six times slower.
 
 ### VideoPose3D lifting weights
 
@@ -163,13 +150,100 @@ h3dm
 ```
 
 
-## Demo Data
+## Docker
 
-Demo files are available from Google Drive:
+Runs the app in a container so you do not have to set up Conda. Two image
+variants are built from the same `docker/Dockerfile`: `cpu` and `gpu`.
+
+| Platform | What to use |
+| --- | --- |
+| Linux / Windows with an NVIDIA GPU | Docker, `gpu` profile |
+| Linux / Windows without a GPU | Docker, `cpu` profile |
+| **macOS** | **Native (`h3dm`), not Docker**|
+
+
+### Before the first build
+
+Place the pose models at `pipelines/models` first (see
+[Pose models](#pose-models)). They are not in the repository, and the image
+copies them in at build time; without them analysis fails with
+`detector_model_not_found`.
+
+The `gpu` profile additionally needs the NVIDIA driver and the NVIDIA Container
+Toolkit on the host. On Windows that means Docker Desktop with the WSL2 backend.
+No CUDA toolkit install is required — `onnxruntime-gpu[cuda,cudnn]` pulls the
+CUDA runtime in as Python packages.
+
+### Run
+
+```bash
+docker compose -f docker/docker-compose.yml --profile cpu up -d --build
+docker compose -f docker/docker-compose.yml --profile gpu up -d --build
+
+docker compospe -f docker/docker-compose.yml down
+```
 
 ```text
-https://drive.google.com/drive/folders/1JD7Ye4nBwJI8rVy0jvVXBtfj6-yEsI_9?usp=drive_link
+https://<internal-ip>:9090
 ```
+
+### Configuration
+
+Copy the sample and edit it. Compose reads `.env` from the directory holding the
+Compose file, so it must live at `docker/.env`:
+
+```bash
+cp docker/.env.example docker/.env
+```
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `H3DM_DATA` | Host folder for recordings and analysis output | `../data` |
+| `H3DM_PUBLIC_URL` | Pins the address used in phone-capture QR codes | request host |
+| `H3DM_PORT` | Published port on the host | `9090` |
+| `H3DM_THREADS` | Inference threads | `4` |
+| `TZ` | Time zone used in session folder names | `Asia/Seoul` |
+
+### Open the UI on the LAN address, not localhost
+
+The QR codes for phone capture point at whatever address you used to reach the
+app. Open `https://localhost:9090` and the QR codes say `localhost`, which no
+phone can reach. Either browse to the machine's LAN address:
+
+```text
+https://<internal-ip>:9090
+```
+
+or pin it once in `docker/.env`:
+
+```bash
+H3DM_PUBLIC_URL=https://<internal-ip>:9090
+```
+
+Find the address with `ipconfig getifaddr en0` (macOS), `hostname -I` (Linux),
+or `ipconfig` (Windows).
+
+### Do not run the native app and the container at the same time
+
+Both bind port 9090 and requests land on whichever won the bind, which is
+confusing to debug. Stop one, or set `H3DM_PORT` to move the container.
+
+### Data
+
+Everything the app writes lives on the host under `H3DM_DATA`, so removing the
+container does not delete recordings or analysis output:
+
+```text
+<H3DM_DATA>/recordings/     capture sessions and analysis results
+<H3DM_DATA>/webapp_data/    settings.json
+<H3DM_DATA>/tmp/            temporary archives built by Export
+```
+
+
+## Demo Data
+
+Demo files are available from Google Drive: [demo](https://drive.google.com/drive/folders/1JD7Ye4nBwJI8rVy0jvVXBtfj6-yEsI_9?usp=drive_link)
+
 
 ```text
 intrinsic calibration info

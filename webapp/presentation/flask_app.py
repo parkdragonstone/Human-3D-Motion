@@ -691,6 +691,12 @@ def _zip_response(archive_path, filename: str):
         as_attachment=True,
         download_name=filename,
     )
+    # send_file 은 direct_passthrough 응답을 돌려주는데, 그 경로에서 Werkzeug 는
+    # 파일 객체를 ClosingIterator 로 감싸지 않고 그대로 반환한다
+    # (wrappers/response.py 의 get_app_iter). 그러면 Response.close() 가 호출되지
+    # 않아 아래 call_on_close 가 영영 실행되지 않고, Export 한 번마다 임시 zip 이
+    # 통째로 남는다. 끄면 청크 스트리밍은 그대로면서 응답 종료 시 정리가 돈다.
+    response.direct_passthrough = False
 
     @response.call_on_close
     def _remove_archive() -> None:

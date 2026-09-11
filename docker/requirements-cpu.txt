@@ -1,0 +1,12 @@
+# CPU 변형. GPU 가 없는 Windows/Linux, 그리고 프록시 뒤 서버 배포용.
+#
+#   docker compose -f docker/docker-compose.yml --profile cpu up -d --build
+#
+-r requirements-common.txt
+
+# backend.py 는 CUDA/ROCm/MPS 가 없으면 ("openvino", "cpu") 로 내려간다.
+# openvino 는 Intel CPU 에서 강점이 크고 AMD 에서는 이득이 작을 수 있는데,
+# pose 솔버(setup_pose_solver)에는 폴백이 없어서 backend.py:48 이 openvino 를
+# 요구하는 한 반드시 설치돼 있어야 한다.
+onnxruntime==1.29.0
+openvino==2026.3.1

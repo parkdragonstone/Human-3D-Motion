@@ -1,0 +1,17 @@
+# GPU 변형. NVIDIA GPU 가 있는 Windows(WSL2)/Linux 용.
+#
+#   docker compose -f docker/docker-compose.yml --profile gpu up -d --build
+#
+# 호스트에 NVIDIA 드라이버 + NVIDIA Container Toolkit 이 필요하다.
+# CUDA 툴킷 자체는 필요 없다 — 아래 extras 가 런타임을 pip 패키지로 가져온다.
+-r requirements-common.txt
+
+# [cuda,cudnn] extras 가 nvidia-cuda-runtime~=13.0, nvidia-cuda-nvrtc~=13.0,
+# nvidia-cufft, nvidia-curand, nvidia-cudnn-cu13~=9.0 을 함께 설치한다.
+# 덕분에 nvidia/cuda 베이스 이미지 없이 python:3.12-slim 위에서 돌아간다.
+onnxruntime-gpu[cuda,cudnn]==1.29.0
+
+# openvino 도 함께 둔다. backend.py 는 CUDA 가 잡히면 onnxruntime 을 쓰지만,
+# models.py 의 _DETECTOR_FALLBACKS 가 ("openvino","cpu") 를 안전망으로 갖고
+# 있어서, GPU 초기화가 실패해도 CPU 로 완주할 수 있다.
+openvino==2026.3.1

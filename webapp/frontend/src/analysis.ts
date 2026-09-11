@@ -2643,29 +2643,50 @@ function clearCalibrationFile(): void {
   calibrationUploadPending = null;
 }
 
-/** 작업이 끝날 때까지 로그를 흘려보내며 기다리고, 최종 상태를 돌려준다. */
+/** 작업이 끝날 때까지 로그를 흘려보내며 기다리고, 최종 상태를 돌려준다.
+ *
+ * setInterval 로 async 콜백을 돌리면 폴링 한 번이 주기를 넘길 때(분석이 CPU 를
+ * 다 쓰는 동안은 흔하다) 틱이 겹쳐서, 여러 콜백이 동시에 완료 상태를 보고
+ * 종료 메시지를 각자 찍는다. clearInterval 은 이미 시작된 콜백을 되돌리지
+ * 못하기 때문이다. 그래서 다음 폴링을 직접 예약해 겹치지 않게 하고, 종료
+ * 처리는 settled 플래그로 딱 한 번만 한다.
+ */
 function waitForJob(jobId: string): Promise<string> {
   return new Promise((resolve) => {
     let lastLogCount = 0;
-    const timer = window.setInterval(async () => {
+    let settled = false;
+
+    const finish = (status: string, message: string): void => {
+      if (settled) return;
+      settled = true;
+      log(message);
+      resolve(status);
+    };
+
+    const poll = async (): Promise<void> => {
       let job: AnalysisJob;
       try {
         job = await fetchJson<AnalysisJob>(`/api/analysis/jobs/${jobId}`);
       } catch (error) {
         // 폴링이 끊기면 배치가 영영 멈추므로 실패로 매듭짓는다.
-        window.clearInterval(timer);
-        log(error instanceof Error ? error.message : "Lost track of the analysis job");
-        resolve("failed");
+        finish("failed", error instanceof Error ? error.message : "Lost track of the analysis job");
         return;
       }
+      if (settled) return;
+
       job.logs.slice(lastLogCount).forEach((entry) => log(`[${entry.level}] ${entry.message}`));
       lastLogCount = job.logs.length;
-      if (job.status === "completed" || job.status === "failed") {
-        window.clearInterval(timer);
-        log(job.status === "completed" ? "Analysis completed" : `Analysis failed: ${job.error || ""}`);
-        resolve(job.status);
+
+      if (job.status === "completed") {
+        finish("completed", "Analysis completed");
+      } else if (job.status === "failed") {
+        finish("failed", `Analysis failed: ${job.error || ""}`);
+      } else {
+        window.setTimeout(poll, 1000);
       }
-    }, 1000);
+    };
+
+    void poll();
   });
 }
 

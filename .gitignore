@@ -21,6 +21,7 @@ plan/
 pipelines/models/
 webapp/presentation/static/dist/
 Users/
+demo/
 # Runtime logs and local OpenSim outputs
 *.log
 opensim.log
@@ -38,3 +39,8 @@ opensim.log
 # OS/editor noise
 .DS_Store
 Thumbs.db
+
+# 배포 시크릿
+.env*
+data/
+!docker/.env.example

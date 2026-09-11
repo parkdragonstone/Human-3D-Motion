@@ -1,0 +1,49 @@
+# H3DM Docker 공통 런타임 의존성 (CPU/GPU 변형이 함께 쓴다).
+#
+# 추론 런타임만 변형별로 갈린다 → requirements-cpu.txt / requirements-gpu.txt
+# 로컬 개발(네이티브)은 environment-cpu.yml / environment-gpu.yml 을 계속 쓴다.
+#
+# 주의: opensim 은 Linux aarch64 휠이 없다. 이미지는 반드시 linux/amd64 로
+# 빌드해야 한다 (docker-compose.yml 이 platform 으로 강제한다).
+
+# ── 웹 ───────────────────────────────────────────────────────────────
+Flask==3.1.3
+Werkzeug==3.1.8
+Flask-SocketIO==5.6.1
+python-socketio==5.16.4
+python-engineio==4.14.0
+simple-websocket==1.1.0        # threading 모드에서 실제 WebSocket 을 쓰게 해준다
+gunicorn==23.0.0               # HUMAN_3D_MOTION_HTTPS=0 (프록시 뒤) 일 때 사용
+cryptography==46.0.3           # HUMAN_3D_MOTION_HTTPS=1 일 때 Werkzeug 가
+                               # 자체서명 인증서를 즉석 생성하는 데 쓴다.
+                               # 폰 캡처의 getUserMedia 는 HTTPS 가 필수다.
+qrcode[pil]==8.2
+
+# ── 수치/데이터 ───────────────────────────────────────────────────────
+numpy==2.5.3
+scipy==1.18.1
+pandas==3.0.5
+matplotlib==3.11.1
+lxml==6.1.3
+tqdm==4.70.0
+
+# ── 비전 ─────────────────────────────────────────────────────────────
+rtmlib==0.0.16                 # opencv-python / opencv-contrib-python 을 함께 끌어온다
+opencv-python==5.0.0.93
+opencv-contrib-python==5.0.0.93   # cv2.aruco (Charuco 캘리브레이션) 가 여기 있다
+
+# ── 생체역학 ──────────────────────────────────────────────────────────
+opensim==4.6                   # manylinux_2_28_x86_64 휠 (71.9MB)
+
+# ── 3D 리프팅 (VideoPose3D 자동 캘리브레이션) ─────────────────────────
+# pipelines/calibration/keypoints/lift3d.py 전용. 이 코드는 항상 device="cpu"
+# 로 동작하므로(load_lifter/lift_sequence 기본값) GPU 변형에서도 CPU 빌드면
+# 충분하다. CUDA 빌드를 쓰면 이미지만 2GB 넘게 불어나고 얻는 게 없다.
+#
+# +cpu 로컬 버전을 반드시 박을 것. 그냥 `torch` 로 두면 PyPI 기본 휠이
+# nvidia-* 패키지를 줄줄이 끌고 온다.
+#
+# 라이선스: torch 는 BSD-3 이지만 이 기능이 쓰는 체크포인트
+# pretrained_h36m_detectron_coco.bin 은 CC BY-NC 4.0(비상업 전용)이다.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.14.0+cpu

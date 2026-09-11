@@ -1,0 +1,107 @@
+# H3DM 로컬 실행 스택.
+#
+# ── 사용법 ────────────────────────────────────────────────────────────
+#   cd docker
+#   docker compose --profile cpu up -d --build     # GPU 없음
+#   docker compose --profile gpu up -d --build     # NVIDIA GPU 있음
+#   docker compose --profile cpu logs -f
+#   docker compose --profile cpu down
+#
+#   레포 루트에서 실행하려면 -f 를 붙인다:
+#   docker compose -f docker/docker-compose.yml --profile cpu up -d --build
+#
+#   name 을 고정해 뒀으므로 어느 쪽으로 실행하든 컨테이너 이름은 같다.
+#
+# ── 플랫폼별 ──────────────────────────────────────────────────────────
+#   Linux / Windows : 위 그대로. GPU 가 있으면 gpu, 없으면 cpu 프로파일.
+#                     gpu 는 호스트에 NVIDIA 드라이버 + NVIDIA Container
+#                     Toolkit 이 필요하다 (Windows 는 Docker Desktop + WSL2).
+#
+#   macOS           : Docker 를 쓰지 말 것. 컨테이너는 Metal/MPS 에 접근할 수
+#                     없고, Apple Silicon 에서는 opensim 에 aarch64 휠이 없어
+#                     amd64 에뮬레이션으로 돌아 추론이 약 50배 느리다.
+#                     네이티브 실행이 MPS 를 자동으로 잡는다:
+#                         conda activate human-3d-motion && h3dm
+#
+# ── 설정 ──────────────────────────────────────────────────────────────
+#   docker/.env 파일로 바꾼다 (docker/.env.example 참고).
+#   compose 는 이 파일이 있는 디렉터리의 .env 를 읽는다.
+#
+# ── 폰 캡처 주소 ──────────────────────────────────────────────────────
+#   QR 에 들어가는 주소는 기본적으로 "운영자가 접속한 주소"를 그대로 따른다
+#   (flask_app.py 의 _base_url → request.url_root). 그래서 브라우저를
+#   localhost 로 열면 QR 도 localhost 가 되어 폰이 영영 못 붙는다.
+#
+#   → 브라우저를 이 PC 의 LAN IP 로 열면 된다:  https://192.168.x.x:9090
+#   → 또는 docker/.env 에 H3DM_PUBLIC_URL 을 박아 고정한다.
+name: h3dm
+
+# 두 변형이 공유하는 설정. 다른 건 이미지와 추론 런타임뿐이다.
+x-h3dm-common: &h3dm-common
+  # opensim/openvino 에 aarch64 휠이 없다. x86 호스트에서는 무해한 지정이고,
+  # Apple Silicon 에서는 이게 없으면 pip 단계에서 빌드가 죽는다.
+  platform: linux/amd64
+  restart: unless-stopped
+  volumes:
+    - ${H3DM_DATA:-../data}:/data
+  ports:
+    # 0.0.0.0 으로 게시한다. 폰 캡처는 폰이 LAN 으로 이 포트에 붙어야 하므로
+    # 루프백 전용으로 묶으면 QR 흐름이 통째로 막힌다.
+    - "${H3DM_PORT:-9090}:9090"
+  environment: &h3dm-env
+    # ── 저장 ──────────────────────────────────────────────────────
+    HUMAN_3D_MOTION_STORAGE: /data/recordings
+    HUMAN_3D_MOTION_SETTINGS: /data/webapp_data/settings.json
+    TMPDIR: /data/tmp          # Export zip 임시 파일을 볼륨 안에 만든다
+    # ── 네트워크 ───────────────────────────────────────────────────
+    HUMAN_3D_MOTION_HOST: 0.0.0.0
+    HUMAN_3D_MOTION_PORT: "9090"
+    # 1 = 앱이 자체서명 TLS 를 띄운다. 폰 캡처(getUserMedia)에 필수.
+    # 리버스 프록시 뒤에 둘 때만 0 으로 바꾼다.
+    HUMAN_3D_MOTION_HTTPS: "1"
+    HUMAN_3D_MOTION_OPEN_BROWSER: "0"
+    # 비워 두면 요청 Host 를 쓴다. 위 "폰 캡처 주소" 설명 참고.
+    HUMAN_3D_MOTION_PUBLIC_URL: "${H3DM_PUBLIC_URL:-}"
+    # ── 기타 ──────────────────────────────────────────────────────
+    MPLBACKEND: Agg
+    # 세션 폴더 이름이 datetime.now() 로 찍힌다. 컨테이너 기본값은 UTC 라
+    # 지정하지 않으면 한국 시간과 9시간 어긋난다.
+    TZ: "${TZ:-Asia/Seoul}"
+    OMP_NUM_THREADS: "${H3DM_THREADS:-4}"
+
+services:
+  # ── CPU 변형 ────────────────────────────────────────────────────────
+  h3dm-cpu:
+    <<: *h3dm-common
+    profiles: ["cpu"]
+    image: h3dm:cpu
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        VARIANT: cpu
+
+  # ── GPU 변형 (NVIDIA) ───────────────────────────────────────────────
+  # backend.py 가 CUDAExecutionProvider 를 감지하면 알아서 GPU 를 쓴다.
+  # 코드 변경은 전혀 필요 없다. GPU 초기화가 실패해도 models.py 의
+  # _DETECTOR_FALLBACKS 가 CPU 로 떨어뜨려 분석은 완주한다.
+  h3dm-gpu:
+    <<: *h3dm-common
+    profiles: ["gpu"]
+    image: h3dm:gpu
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        VARIANT: gpu
+    environment:
+      <<: *h3dm-env
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

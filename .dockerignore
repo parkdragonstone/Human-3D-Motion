@@ -1,8 +1,17 @@
 .git
+.gitignore
 node_modules
 webapp_data
 recordings
 webapp/presentation/static/dist
+docs
+demo
+packaging
+dist
+build
+.bkit
+.claude
+.env*
 __pycache__
 **/__pycache__
 *.pyc
@@ -13,10 +22,22 @@ __pycache__
 .ruff_cache
 *.log
 opensim.log
+
+# 세션 산출물. pipelines/ 안에는 이런 확장자가 없으므로 전역 제외해도 안전하다.
 *.mp4
 *.avi
 *.mov
 *.webm
 *.trc
 *.mot
+
+# .osim 은 사정이 다르다: 파이프라인이 읽는 OpenSim 기본 모델이
+# pipelines/OpenSim_Setup/ 에 들어 있어서, 전역 제외하면 scaling/IK 가
+# 컨테이너 안에서 모델을 못 찾고 죽는다 (kinematics/setup_files.py:28).
 *.osim
+!pipelines/OpenSim_Setup/*.osim
+
+# OS/editor noise
+.DS_Store
+**/.DS_Store
+Thumbs.db
