@@ -21,7 +21,7 @@ from webapp.application.media_view_service import (
 )
 from webapp.application.report_service import ReportService
 from webapp.application.storage_root_service import StorageRootSelection, StorageRootService
-from webapp.application.capture_service import ActiveCapture, CaptureService
+from webapp.application.capture_service import ActiveCapture, CaptureService, UploadedVideo
 from webapp.application.phone_capture_service import (
     PhoneCalibration,
     PhoneCaptureService,
@@ -48,6 +48,7 @@ __all__ = [
     "CaptureRecordingResult",
     "CaptureRecordingService",
     "CaptureService",
+    "UploadedVideo",
     "MediaViewService",
     "PhoneCalibration",
     "PhoneCaptureService",

@@ -1,5 +1,6 @@
 import { fetchJson, postJson } from "./api.js";
 import { pagerStep, renderListPager } from "./list_pager.js";
+import "./video_export.js";
 import type { CameraSettings, CameraStatus, PhoneDraft } from "./types.js";
 
 declare global {
@@ -387,6 +388,7 @@ function renderCalibrations(calibrations: CalibrationRecord[]): void {
             <div class="session-actions">
               <time>${calibration.display_updated_at || calibration.updated_at}</time>
               <button class="session-analyze-button" type="button" data-run-calibration-folder="${calibration.folder_name}" data-calibration-record-mode="${calibration.mode}">Calibration</button>
+              <button class="session-export-button" type="button" data-export-videos="${calibration.output_dir}">Export</button>
               <button class="session-delete-button" type="button" data-delete-calibration-folder="${calibration.folder_name}">Delete</button>
             </div>
           </header>

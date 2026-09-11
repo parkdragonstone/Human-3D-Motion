@@ -43,8 +43,8 @@ def kinematics_dataframe(mot_path: Path, filter_config: dict | None = None) -> p
     """time + joint angles + trunk global angles + angular velocities."""
     mot_df, in_degrees = read_mot_dataframe(Path(mot_path))
     angles_df = _filter_angle_dataframe(mot_df.copy(), filter_config)
-    _add_lumbar_totals(angles_df, Path(mot_path))
-    trunk_global_angles = _trunk_global_angles(angles_df, in_degrees, Path(mot_path))
+    lumbar_rotation = _add_lumbar_totals(angles_df, in_degrees, Path(mot_path))
+    trunk_global_angles = _trunk_global_angles(angles_df, lumbar_rotation, in_degrees, Path(mot_path))
     for index, column in enumerate(TRUNK_GLOBAL_COLUMNS):
         angles_df[column] = trunk_global_angles[:, index]
     angles_df = _filter_columns(angles_df, TRUNK_GLOBAL_COLUMNS, filter_config)
@@ -76,27 +76,63 @@ def read_mot_dataframe(mot_path: Path) -> tuple[pd.DataFrame, bool]:
     return mot_df, in_degrees
 
 
-def _add_lumbar_totals(df: pd.DataFrame, mot_path: Path) -> None:
-    """Add pelvis-to-torso lumbar angles as the sum of whatever segments exist."""
-    for axis in LUMBAR_AXES:
-        columns = [f"{segment}_{axis}" for segment in LUMBAR_SEGMENTS if f"{segment}_{axis}" in df.columns]
-        if not columns:
-            raise ValueError(f"Cannot compute lumbar {axis}; no lumbar columns in {mot_path}")
-        df[f"lumbar_{axis}"] = df.loc[:, columns].sum(axis=1)
+def _lumbar_rotation(df: pd.DataFrame, in_degrees: bool, mot_path: Path) -> Rotation:
+    """Pelvis-to-torso rotation, composed down the lumbar chain.
+
+    Every lumbar joint in the model drives axes Z, X then Y with unit linear
+    functions and carries no offset rotation, and pelvis->sacrum is a weld, so
+    chaining the per-segment ZXY rotations reproduces exactly what OpenSim's
+    BodyKinematics would report for the torso. Summing the segment angles and
+    reading the sum as one Euler triple does not: rotations do not commute, and
+    on this project's trials that shortcut was off by up to 9.9 degrees.
+    """
+    rotation = None
+    for segment in LUMBAR_SEGMENTS:
+        columns = [f"{segment}_{axis}" for axis in LUMBAR_AXES]
+        if not all(column in df.columns for column in columns):
+            continue
+        segment_rotation = Rotation.from_euler(
+            OPENSIM_EULER_SEQUENCE, df.loc[:, columns].to_numpy(dtype=float), degrees=in_degrees,
+        )
+        rotation = segment_rotation if rotation is None else rotation * segment_rotation
+    if rotation is None:
+        raise ValueError(f"Cannot compute lumbar rotation; no lumbar columns in {mot_path}")
+    return rotation
 
 
-def _trunk_global_angles(mot_df: pd.DataFrame, in_degrees: bool, mot_path: Path) -> np.ndarray:
-    required_columns = PELVIS_GLOBAL_COLUMNS + LUMBAR_TOTAL_COLUMNS
-    missing_columns = [column for column in required_columns if column not in mot_df.columns]
+def _add_lumbar_totals(df: pd.DataFrame, in_degrees: bool, mot_path: Path) -> Rotation:
+    """Store pelvis-to-torso angles and hand the rotation back for reuse."""
+    lumbar_rotation = _lumbar_rotation(df, in_degrees, mot_path)
+    angles = _unwrap_euler(lumbar_rotation.as_euler(OPENSIM_EULER_SEQUENCE, degrees=in_degrees), in_degrees)
+    for index, axis in enumerate(LUMBAR_AXES):
+        df[f"lumbar_{axis}"] = angles[:, index]
+    return lumbar_rotation
+
+
+def _trunk_global_angles(
+    mot_df: pd.DataFrame,
+    lumbar_rotation: Rotation,
+    in_degrees: bool,
+    mot_path: Path,
+) -> np.ndarray:
+    missing_columns = [column for column in PELVIS_GLOBAL_COLUMNS if column not in mot_df.columns]
     if missing_columns:
         raise ValueError(f"Cannot compute trunk global angles; missing {missing_columns} in {mot_path}")
 
     pelvis_global = mot_df.loc[:, PELVIS_GLOBAL_COLUMNS].to_numpy(dtype=float)
-    lumbar_total = mot_df.loc[:, LUMBAR_TOTAL_COLUMNS].to_numpy(dtype=float)
     pelvis_rotation = Rotation.from_euler(OPENSIM_EULER_SEQUENCE, pelvis_global, degrees=in_degrees)
-    lumbar_rotation = Rotation.from_euler(OPENSIM_EULER_SEQUENCE, lumbar_total, degrees=in_degrees)
     trunk_rotation = pelvis_rotation * lumbar_rotation
-    return trunk_rotation.as_euler(OPENSIM_EULER_SEQUENCE, degrees=in_degrees)
+    return _unwrap_euler(trunk_rotation.as_euler(OPENSIM_EULER_SEQUENCE, degrees=in_degrees), in_degrees)
+
+
+def _unwrap_euler(angles: np.ndarray, in_degrees: bool) -> np.ndarray:
+    """Undo the +-180 branch jumps as_euler leaves in a time series.
+
+    Without this a trunk that keeps turning past the branch reads as a vertical
+    cliff in the chart rather than a continuous rotation.
+    """
+    period = 360.0 if in_degrees else 2 * np.pi
+    return np.unwrap(angles, period=period, axis=0)
 
 
 def _filter_angle_dataframe(df: pd.DataFrame, filter_config: dict | None) -> pd.DataFrame:

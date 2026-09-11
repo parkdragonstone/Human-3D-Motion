@@ -6,11 +6,13 @@ from pathlib import Path
 from flask import Flask, jsonify, redirect, render_template, request, send_file, url_for
 from flask_socketio import SocketIO
 
+from webapp.application import UploadedVideo
 from webapp.application.phone_capture_service import PhoneVideoUpload
 from webapp.bootstrap import create_app_services
 from webapp.presentation.request_parsers import (
     calibration_mode as _calibration_mode,
     capture_payload_from_form as _capture_payload_from_form,
+    capture_subject_from_form as _capture_subject_from_form,
     capture_subject_from_json as _capture_subject_from_json,
     payload_camera_label as _payload_camera_label,
 )
@@ -315,6 +317,27 @@ def create_app():
         except (ValueError, FileNotFoundError) as exc:
             return jsonify({"error": str(exc)}), 400
 
+    @app.post("/api/videos/export")
+    def api_videos_export():
+        data = request.get_json(silent=True) or {}
+        try:
+            filename, archive_path = capture_service.export_videos_archive(str(data.get("path") or ""))
+        except (ValueError, FileNotFoundError) as exc:
+            return jsonify({"error": str(exc)}), 400
+        return _zip_response(archive_path, filename)
+
+    @app.post("/api/report/export")
+    def api_report_export():
+        data = request.get_json(silent=True) or {}
+        try:
+            filename, archive_path = report_service.export_archive(
+                str(data.get("session_path") or ""),
+                [str(item) for item in (data.get("parts") or [])],
+            )
+        except (ValueError, FileNotFoundError) as exc:
+            return jsonify({"error": str(exc)}), 400
+        return _zip_response(archive_path, filename)
+
     @app.post("/api/report/run")
     def api_report_run():
         data = request.get_json(silent=True) or {}
@@ -415,6 +438,20 @@ def create_app():
     @app.get("/api/sessions")
     def api_sessions():
         return jsonify([_session_to_dict(media_view_service.session_view(s)) for s in capture_service.list_sessions()])
+
+    @app.post("/api/sessions/upload")
+    def api_upload_session():
+        try:
+            subject = _capture_subject_from_form(request.form)
+            uploads = [
+                UploadedVideo(filename=item.filename or "", stream=item.stream)
+                for item in request.files.getlist("videos")
+                if item and item.filename
+            ]
+            session = capture_service.create_uploaded_session(subject, uploads)
+        except (ValueError, OSError) as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify(_session_to_dict(media_view_service.session_view(session)))
 
     @app.delete("/api/sessions/<session_id>")
     def api_delete_session(session_id):
@@ -644,6 +681,22 @@ def create_app():
             _emit_camera_status(socketio, capture_service)
 
     return app, socketio
+
+
+def _zip_response(archive_path, filename: str):
+    """Send a temp archive and delete it once the response is done with it."""
+    response = send_file(
+        archive_path,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=filename,
+    )
+
+    @response.call_on_close
+    def _remove_archive() -> None:
+        archive_path.unlink(missing_ok=True)
+
+    return response
 
 
 def _emit_camera_status(socketio: SocketIO, capture_service) -> None:

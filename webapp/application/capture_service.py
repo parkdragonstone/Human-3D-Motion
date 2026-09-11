@@ -6,8 +6,19 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from webapp.domain.entities import CameraStatus, CaptureSession, SubjectInfo
+from webapp.application.archive import VIDEO_SUFFIXES, build_archive, is_visible_file, resolve_inside
+from webapp.domain.entities import CameraStatus, CaptureSession, CaptureVideo, SubjectInfo
 from webapp.domain.ports import CameraController, SessionCatalog, SettingsRepository
+
+
+# The session catalogue only recognises these, so anything else is stored as .mp4.
+UPLOAD_VIDEO_EXTENSIONS = {".mp4", ".avi"}
+
+
+@dataclass
+class UploadedVideo:
+    filename: str
+    stream: object
 
 
 @dataclass
@@ -131,6 +142,64 @@ class CaptureService:
         )
         self._active_capture = ActiveCapture(session_id, subject, timestamp, camera_ids, session_dir)
         return session
+
+    def create_uploaded_session(self, subject: SubjectInfo, uploads: list[UploadedVideo]) -> CaptureSession:
+        """Store already-recorded videos as a session named like a live capture.
+
+        The files are renamed into the catalogue's convention, in upload order,
+        so an uploaded session is indistinguishable from a captured one.
+        """
+        if not uploads:
+            raise ValueError("select_at_least_one_video")
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        session_name = _session_name(subject, timestamp)
+        session_dir = Path(self.get_storage_root()) / session_name
+        session_dir.mkdir(parents=True, exist_ok=True)
+
+        videos: list[CaptureVideo] = []
+        for index, upload in enumerate(uploads, start=1):
+            if upload.stream is None:
+                raise ValueError("video_file_required")
+            camera_label = f"cam{index:02d}"
+            extension = Path(upload.filename or "").suffix.lower()
+            if extension not in UPLOAD_VIDEO_EXTENSIONS:
+                extension = ".mp4"
+            output_path = session_dir / f"{session_name}_{camera_label}{extension}"
+            with output_path.open("wb") as handle:
+                shutil.copyfileobj(upload.stream, handle)
+            videos.append(CaptureVideo(
+                camera_id=camera_label,
+                camera_label=camera_label,
+                path=str(output_path),
+            ))
+
+        return CaptureSession(
+            session_id=timestamp,
+            subject=subject,
+            timestamp=timestamp,
+            session_path=str(session_dir),
+            status="captured",
+            videos=videos,
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+        )
+
+    def export_videos_archive(self, folder_path: str) -> tuple[str, Path]:
+        """Zip the videos sitting directly in one session or calibration folder.
+
+        Kept to the folder's own files so a capture card and a calibration card
+        can share it; the caller deletes the temp archive.
+        """
+        storage_root = Path(self.get_storage_root()).resolve()
+        target = resolve_inside(folder_path, storage_root)
+        videos = sorted(
+            path for path in target.iterdir()
+            if path.suffix.lower() in VIDEO_SUFFIXES and is_visible_file(path, target)
+        )
+        if not videos:
+            raise ValueError("no_videos_to_export")
+        return f"{target.name}_videos.zip", build_archive(videos, target)
 
     def stop_capture(self) -> CaptureSession:
         if self._active_capture is None:

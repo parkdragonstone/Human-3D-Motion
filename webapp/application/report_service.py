@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from webapp.application.archive import build_archive, is_visible_file
 from webapp.application.session_query_service import SessionQueryService
 from webapp.domain.ports import ReportRunner
 
 MOTIONS = ("Walking",)
+# What the export dialog offers, in the order it lists them.
+EXPORT_PARTS = ("video", "calibration", "pose", "pose-3d", "kinematics", "summary")
 # "auto" reads the heading off the walking path; the axes stay as overrides.
 WALKING_DIRECTIONS = ("auto", "+x", "-x", "+z", "-z")
 
@@ -22,7 +25,25 @@ class ReportService:
         self._session_query_service = session_query_service
 
     def options(self) -> dict:
-        return {"motions": list(MOTIONS), "walking_directions": list(WALKING_DIRECTIONS)}
+        return {
+            "motions": list(MOTIONS),
+            "walking_directions": list(WALKING_DIRECTIONS),
+            "export_parts": list(EXPORT_PARTS),
+        }
+
+    def export_archive(self, session_path: str, parts: list[str]) -> tuple[str, Path]:
+        """Zip the selected session artefacts to a temp file the caller must delete."""
+        session = self._session_query_service.require_by_path(session_path)
+        root = Path(session.session_path).resolve()
+        selected = [part for part in EXPORT_PARTS if part in set(parts)]
+        if not selected:
+            raise ValueError("select_at_least_one_dataset")
+
+        files = _export_files(root, selected)
+        if not files:
+            raise ValueError("nothing_to_export")
+
+        return f"{root.name}.zip", build_archive(files, root)
 
     def run(self, session_path: str, motion: str, walking_direction: str) -> dict:
         session = self._session_query_service.require_by_path(session_path)
@@ -75,3 +96,19 @@ class ReportService:
         if normalized not in WALKING_DIRECTIONS:
             raise ValueError("invalid_walking_direction")
         return normalized
+
+
+def _export_files(root: Path, parts: list[str]) -> list[Path]:
+    paths: list[Path] = []
+    if "video" in parts:
+        # Source footage only; the overlay renders live under pose/.
+        paths += sorted(path for path in root.iterdir() if path.suffix.lower() in {".mp4", ".avi"})
+    if "calibration" in parts:
+        # The camera parameters this analysis actually ran with.
+        paths += sorted(root.glob("*calibration*.json"))
+    for directory in ("pose", "pose-3d", "kinematics"):
+        if directory in parts and (root / directory).is_dir():
+            paths += sorted((root / directory).rglob("*"))
+    if "summary" in parts:
+        paths += sorted(root.glob("*_gait_parameters.csv"))
+    return [path for path in paths if is_visible_file(path, root)]

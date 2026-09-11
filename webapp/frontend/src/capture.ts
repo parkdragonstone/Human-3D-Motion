@@ -1,5 +1,6 @@
 import { fetchJson, postJson } from "./api.js";
 import { pagerStep, renderListPager } from "./list_pager.js";
+import "./video_export.js";
 import type { CameraSettings, CameraStatus, CaptureSession, CaptureStatusPayload, PhoneDraft } from "./types.js";
 
 declare global {
@@ -35,6 +36,15 @@ const captureActionLabel = document.querySelector<HTMLElement>("[data-capture-ac
 const recordingTimer = document.querySelector<HTMLElement>("[data-capture-recording-timer]");
 const sessionList = document.querySelector<HTMLElement>("#sessionList");
 const sessionPager = document.querySelector<HTMLElement>("#sessionPager");
+const uploadModal = document.querySelector<HTMLElement>("[data-upload-modal]");
+const uploadForm = document.querySelector<HTMLFormElement>("[data-upload-form]");
+const uploadInput = document.querySelector<HTMLInputElement>("[data-upload-input]");
+const uploadDropzone = document.querySelector<HTMLElement>("[data-upload-dropzone]");
+const uploadFileList = document.querySelector<HTMLElement>("[data-upload-file-list]");
+const uploadError = document.querySelector<HTMLElement>("[data-upload-error]");
+const uploadSubmit = document.querySelector<HTMLButtonElement>("[data-upload-submit]");
+// The picker cannot be assigned to, so dropped files are held here instead.
+let uploadFiles: File[] = [];
 // flask_app.py 의 LIST_PAGE_SIZE 와 같은 값이어야 첫 화면이 흔들리지 않는다.
 const SESSION_PAGE_SIZE = 10;
 let sessionPage = 0;
@@ -157,6 +167,7 @@ function renderSessions(sessions: CaptureSession[]): void {
             <div class="session-actions">
               <time>${session.display_timestamp || session.timestamp}</time>
               <a class="session-analyze-button" href="/analysis">Analyze</a>
+              <button class="session-export-button" type="button" data-export-videos="${session.session_path}">Export</button>
               <button class="session-delete-button" type="button" data-delete-session-id="${session.session_id}">Delete</button>
             </div>
           </header>
@@ -505,3 +516,127 @@ if (window.io) {
 
 refreshCameras().catch(() => undefined);
 refreshSessions().catch(() => undefined);
+
+/* ── Video upload ──────────────────────────────────────────────────────────
+   Videos recorded elsewhere are stored as a session, renamed into the same
+   convention a live capture produces, so the rest of the app cannot tell the
+   two apart. Cameras are assigned in the order the files are listed. */
+
+function openUploadModal(): void {
+  if (!uploadModal) return;
+  uploadForm?.reset();
+  setUploadFiles([]);
+  showUploadError("");
+  uploadModal.hidden = false;
+  uploadModal.querySelector<HTMLInputElement>('input[name="name"]')?.focus();
+}
+
+function closeUploadModal(): void {
+  if (!uploadModal) return;
+  uploadModal.hidden = true;
+  setUploadFiles([]);
+}
+
+function setUploadFiles(files: File[]): void {
+  uploadFiles = files;
+  if (!uploadFileList) return;
+  uploadFileList.innerHTML = files
+    .map((file, index) => `
+      <li>
+        <span class="upload-file-camera">cam${String(index + 1).padStart(2, "0")}</span>
+        <span class="upload-file-name">${file.name}</span>
+        <small>${formatFileSize(file.size)}</small>
+      </li>
+    `)
+    .join("");
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+function showUploadError(message: string): void {
+  if (!uploadError) return;
+  uploadError.textContent = message;
+  uploadError.hidden = !message;
+}
+
+function videoFilesFrom(list: FileList | null): File[] {
+  return Array.from(list || []).filter((file) => file.type.startsWith("video/") || /\.(mp4|avi|mov|m4v|webm)$/i.test(file.name));
+}
+
+document.querySelector("[data-open-upload]")?.addEventListener("click", openUploadModal);
+document.querySelector("[data-upload-cancel]")?.addEventListener("click", closeUploadModal);
+document.querySelector("[data-upload-browse]")?.addEventListener("click", () => uploadInput?.click());
+
+uploadModal?.addEventListener("click", (event) => {
+  if (event.target === uploadModal) closeUploadModal();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && uploadModal && !uploadModal.hidden) closeUploadModal();
+});
+
+uploadInput?.addEventListener("change", () => setUploadFiles(videoFilesFrom(uploadInput.files)));
+
+["dragenter", "dragover"].forEach((name) => {
+  uploadDropzone?.addEventListener(name, (event) => {
+    event.preventDefault();
+    uploadDropzone.classList.add("is-active");
+  });
+});
+["dragleave", "drop"].forEach((name) => {
+  uploadDropzone?.addEventListener(name, (event) => {
+    event.preventDefault();
+    uploadDropzone.classList.remove("is-active");
+  });
+});
+uploadDropzone?.addEventListener("drop", (event) => {
+  const dropped = videoFilesFrom((event as DragEvent).dataTransfer?.files || null);
+  if (dropped.length === 0) {
+    showUploadError("Drop video files only.");
+    return;
+  }
+  showUploadError("");
+  setUploadFiles(dropped);
+});
+
+uploadForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!uploadForm.reportValidity()) return;
+  if (uploadFiles.length === 0) {
+    showUploadError("Add at least one video file.");
+    return;
+  }
+  const formData = new FormData();
+  const fields = new FormData(uploadForm);
+  ["name", "height_cm", "weight_kg", "hand"].forEach((key) => {
+    formData.set(key, String(fields.get(key) ?? ""));
+  });
+  uploadFiles.forEach((file) => formData.append("videos", file, file.name));
+
+  if (uploadSubmit) {
+    uploadSubmit.disabled = true;
+    uploadSubmit.textContent = "Uploading...";
+  }
+  try {
+    const response = await fetch("/api/sessions/upload", {
+      method: "POST",
+      headers: { Accept: "application/json" },
+      body: formData,
+    });
+    if (!response.ok) throw new Error(await response.text());
+    await response.json();
+    closeUploadModal();
+    sessionPage = 0;
+    await refreshSessions();
+  } catch (error) {
+    showUploadError(error instanceof Error ? error.message : "Upload failed.");
+  } finally {
+    if (uploadSubmit) {
+      uploadSubmit.disabled = false;
+      uploadSubmit.textContent = "Upload";
+    }
+  }
+});

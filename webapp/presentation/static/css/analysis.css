@@ -1202,7 +1202,8 @@ textarea[name="object_points"]::-webkit-scrollbar-thumb:hover {
   top: 0;
   bottom: 0;
   border-radius: 3px;
-  background: #8a6d3b;
+  /* Falls back to the centre colour on cards that have no side. */
+  background: var(--side-color, #8a6d3b);
 }
 
 .gait-range-zero {
@@ -1244,4 +1245,107 @@ textarea[name="object_points"]::-webkit-scrollbar-thumb:hover {
   font-size: 13px;
   font-weight: 600;
   color: var(--ink, #17181a);
+}
+
+/* Left/right are coloured the same way as the 3D view and the 2D overlay, so a
+   card, a skeleton and a 3D marker all agree on which side they mean. Sideless
+   cards take the centre colour: --accent is the same navy as the left, so
+   leaving them on it would make them read as left-side cards. */
+.gait-parameter-card {
+  --side-color: #8a6d3b;
+}
+
+.gait-parameter-card[data-side="right"] {
+  --side-color: #a4483c;
+}
+
+.gait-parameter-card[data-side="left"] {
+  --side-color: #2f3f5c;
+}
+
+.gait-parameter-card {
+  border-top-color: var(--side-color);
+}
+
+.gait-parameter-card[data-side] header small {
+  color: var(--side-color);
+  font-weight: 600;
+}
+
+/* ── Session export ─────────────────────────────────────────────────────── */
+.report-export-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+
+.export-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(23, 24, 26, 0.45);
+}
+
+.export-modal[hidden] {
+  display: none;
+}
+
+.export-modal-card {
+  width: min(420px, 100%);
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+}
+
+.export-modal-card h2 {
+  margin: 0;
+  font-size: 15px;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+}
+
+.export-modal-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.export-part-list {
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 2px;
+}
+
+.export-part-list label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.export-part-list label:hover {
+  background: rgba(23, 24, 26, 0.04);
+}
+
+.export-modal-error {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: #a4483c;
+}
+
+.export-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
 }

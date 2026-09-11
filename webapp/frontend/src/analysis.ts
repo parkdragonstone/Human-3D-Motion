@@ -126,6 +126,10 @@ const reportStatus = document.querySelector<HTMLElement>("[data-report-status]")
 const runReportButton = document.querySelector<HTMLButtonElement>("[data-run-report]");
 const reportParameters = document.querySelector<HTMLElement>("[data-report-parameters]");
 const reportParametersSource = document.querySelector<HTMLElement>("[data-report-parameters-source]");
+const exportModal = document.querySelector<HTMLElement>("[data-export-modal]");
+const exportForm = document.querySelector<HTMLFormElement>("[data-export-form]");
+const exportError = document.querySelector<HTMLElement>("[data-export-error]");
+const exportSubmit = document.querySelector<HTMLButtonElement>("[data-export-submit]");
 const overlayToggle = document.querySelector<HTMLInputElement>("[data-overlay-toggle]");
 const togglePlayButton = document.querySelector<HTMLButtonElement>("[data-toggle-play-videos]");
 const videoSeek = document.querySelector<HTMLInputElement>("[data-video-seek]");
@@ -406,8 +410,11 @@ function isFiniteNumber(value: number | null | undefined): boolean {
 
 function renderGaitParameterCard(item: GaitParameter, axis: GaitRangeAxis): string {
   const side = item.side ? `<small>${item.side}</small>` : "";
+  // Same left/right palette the 3D view and the 2D overlay use.
+  const sideKey = (item.side || "").trim().toLowerCase();
+  const sideAttribute = sideKey === "right" || sideKey === "left" ? ` data-side="${sideKey}"` : "";
   return `
-    <article class="gait-parameter-card">
+    <article class="gait-parameter-card"${sideAttribute}>
       <header>
         <span>${item.label}</span>
         ${side}
@@ -2966,3 +2973,111 @@ if (configForm) {
 loadSessions(initialSessionId)
   .then(() => loadAnalysisResults())
   .catch((error) => log(error instanceof Error ? error.message : "Session load failed"));
+
+/* ── Session export ────────────────────────────────────────────────────────
+   The picked datasets are zipped server-side and streamed straight to the file
+   the operator chooses, so a multi-gigabyte session never has to sit in memory. */
+
+interface SaveFilePickerOptions {
+  suggestedName?: string;
+  types?: Array<{ description: string; accept: Record<string, string[]> }>;
+}
+
+function showExportModal(): void {
+  if (!exportModal) return;
+  if (!selectedSession()) {
+    log("Select a session before exporting.");
+    return;
+  }
+  showExportError("");
+  exportModal.hidden = false;
+}
+
+function hideExportModal(): void {
+  if (exportModal) exportModal.hidden = true;
+}
+
+function showExportError(message: string): void {
+  if (!exportError) return;
+  exportError.textContent = message;
+  exportError.hidden = !message;
+}
+
+function exportArchiveName(): string {
+  const session = selectedSession();
+  const folder = (session?.session_path || "").split(/[\\/]/).filter(Boolean).pop();
+  return `${folder || session?.session_id || "session"}.zip`;
+}
+
+document.querySelector("[data-open-export]")?.addEventListener("click", showExportModal);
+document.querySelector("[data-export-cancel]")?.addEventListener("click", hideExportModal);
+exportModal?.addEventListener("click", (event) => {
+  if (event.target === exportModal) hideExportModal();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && exportModal && !exportModal.hidden) hideExportModal();
+});
+
+exportForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const session = selectedSession();
+  if (!session) return;
+  const parts = Array.from(exportForm.querySelectorAll<HTMLInputElement>('input[name="parts"]:checked'))
+    .map((input) => input.value);
+  if (parts.length === 0) {
+    showExportError("Tick at least one dataset.");
+    return;
+  }
+  showExportError("");
+
+  const suggestedName = exportArchiveName();
+  const picker = (window as unknown as {
+    showSaveFilePicker?: (options: SaveFilePickerOptions) => Promise<FileSystemFileHandle>;
+  }).showSaveFilePicker;
+
+  let handle: FileSystemFileHandle | null = null;
+  if (picker) {
+    try {
+      handle = await picker({
+        suggestedName,
+        types: [{ description: "Zip archive", accept: { "application/zip": [".zip"] } }],
+      });
+    } catch {
+      return; // The operator dismissed the save dialog.
+    }
+  }
+
+  if (exportSubmit) {
+    exportSubmit.disabled = true;
+    exportSubmit.textContent = "Exporting...";
+  }
+  try {
+    const response = await fetch("/api/report/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_path: session.session_path, parts }),
+    });
+    if (!response.ok) throw new Error(await response.text());
+    if (handle && response.body) {
+      await response.body.pipeTo(await handle.createWritable());
+    } else {
+      // Browsers without the save picker fall back to an ordinary download.
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = suggestedName;
+      link.click();
+      URL.revokeObjectURL(url);
+    }
+    hideExportModal();
+    log(`Exported ${parts.join(", ")} to ${suggestedName}`);
+  } catch (error) {
+    showExportError(error instanceof Error ? error.message : "Export failed.");
+  } finally {
+    if (exportSubmit) {
+      exportSubmit.disabled = false;
+      exportSubmit.textContent = "Export";
+    }
+  }
+});

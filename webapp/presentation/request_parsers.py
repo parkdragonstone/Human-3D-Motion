@@ -13,6 +13,24 @@ def capture_payload_from_form(form) -> dict:
     return {"subject": subject, "camera_ids": form.getlist("camera_ids")}
 
 
+def capture_subject_from_form(form) -> SubjectInfo:
+    """Subject fields of a multipart upload, validated the same way as capture."""
+    name = form.get("name", "").strip()
+    if not name:
+        raise ValueError("subject_name_required")
+    try:
+        height_cm = int(form.get("height_cm", ""))
+        weight_kg = int(form.get("weight_kg", ""))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("subject_height_and_weight_required") from exc
+    return SubjectInfo(
+        name=name,
+        height_cm=height_cm,
+        weight_kg=weight_kg,
+        hand=safe_hand(form.get("hand", "right")),
+    )
+
+
 def capture_subject_from_json(data: dict) -> SubjectInfo:
     return SubjectInfo(
         name=str(data.get("name", "")).strip(),

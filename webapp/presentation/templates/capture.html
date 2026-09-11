@@ -102,7 +102,7 @@
       <div class="field-row" data-subject-fields>
         <label>
           Name
-          <input name="name" placeholder="RHB" required>
+          <input name="name" placeholder="Enter subject name" required>
         </label>
         <label>
           Height cm
@@ -142,9 +142,12 @@
   </div>
 
   <div class="work-surface">
-    <div class="section-title">
-      <span>03</span>
-      <h2>Recent Sessions</h2>
+    <div class="section-title with-meta">
+      <div>
+        <span>03</span>
+        <h2>Recent Sessions</h2>
+      </div>
+      <button class="button secondary" type="button" data-open-upload>Upload</button>
     </div>
     <div class="session-list" id="sessionList">
       {% for session in recent_sessions %}
@@ -159,6 +162,7 @@
             <div class="session-actions">
               <time>{{ session.display_timestamp }}</time>
               <a class="session-analyze-button" href="{{ url_for('analysis_page', root=storage_root, session_id=session.session_id) }}">Analyze</a>
+              <button class="session-export-button" type="button" data-export-videos="{{ session.session_path }}">Export</button>
               <button class="session-delete-button" type="button" data-delete-session-id="{{ session.session_id }}">Delete</button>
             </div>
           </header>
@@ -181,4 +185,47 @@
     <div class="list-pager" id="sessionPager" hidden></div>
   </div>
 </section>
+
+<div class="upload-modal" data-upload-modal hidden>
+  <div class="upload-modal-card" role="dialog" aria-modal="true" aria-labelledby="uploadModalTitle">
+    <h2 id="uploadModalTitle">Upload Videos</h2>
+    <form data-upload-form>
+      <div class="field-row">
+        <label>
+          Name
+          <input name="name" placeholder="Enter subject name" required>
+        </label>
+        <label>
+          Height cm
+          <input name="height_cm" type="number" min="80" max="230" value="170" required>
+        </label>
+        <label>
+          Weight kg
+          <input name="weight_kg" type="number" min="20" max="180" value="70" required>
+        </label>
+        <label>
+          Hand
+          <select name="hand" required>
+            <option value="right" selected>Right</option>
+            <option value="left">Left</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="upload-dropzone" data-upload-dropzone tabindex="0">
+        <strong>Drag video files here</strong>
+        <span>They become cam01, cam02 ... in the order listed.</span>
+        <button class="button secondary" type="button" data-upload-browse>Browse</button>
+        <input type="file" name="videos" accept="video/*" multiple hidden data-upload-input>
+      </div>
+      <ul class="upload-file-list" data-upload-file-list></ul>
+
+      <p class="upload-modal-error" data-upload-error hidden></p>
+      <div class="upload-modal-actions">
+        <button class="button secondary" type="button" data-upload-cancel>Cancel</button>
+        <button class="button record" type="submit" data-upload-submit>Upload</button>
+      </div>
+    </form>
+  </div>
+</div>
 {% endblock %}

@@ -69,6 +69,31 @@
     <div class="gait-parameter-groups" data-report-parameters>
       <p class="empty">Run the report to compute the summary.</p>
     </div>
+    <div class="report-export-bar">
+      <button class="button secondary" type="button" data-open-export>Export</button>
+    </div>
   </div>
 </section>
+
+<div class="export-modal" data-export-modal hidden>
+  <div class="export-modal-card" role="dialog" aria-modal="true" aria-labelledby="exportModalTitle">
+    <h2 id="exportModalTitle">Export Session Data</h2>
+    <p class="export-modal-hint">Everything you tick is written into a single .zip.</p>
+    <form data-export-form>
+      <ul class="export-part-list">
+        <li><label><input type="checkbox" name="parts" value="video" checked> Video</label></li>
+        <li><label><input type="checkbox" name="parts" value="calibration" checked> Calibration</label></li>
+        <li><label><input type="checkbox" name="parts" value="pose" checked> Pose</label></li>
+        <li><label><input type="checkbox" name="parts" value="pose-3d" checked> Pose-3D</label></li>
+        <li><label><input type="checkbox" name="parts" value="kinematics" checked> Kinematics</label></li>
+        <li><label><input type="checkbox" name="parts" value="summary" checked> Summary</label></li>
+      </ul>
+      <p class="export-modal-error" data-export-error hidden></p>
+      <div class="export-modal-actions">
+        <button class="button secondary" type="button" data-export-cancel>Cancel</button>
+        <button class="button record" type="submit" data-export-submit>Export</button>
+      </div>
+    </form>
+  </div>
+</div>
 {% endblock %}

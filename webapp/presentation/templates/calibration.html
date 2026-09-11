@@ -104,7 +104,7 @@
       <div class="calibration-project-row">
         <label>
           Project Name
-          <input name="project_name" placeholder="bullpen_day01" data-project-name-input required>
+          <input name="project_name" placeholder="Enter project name" data-project-name-input required>
         </label>
         <label>
           Save Camera
@@ -264,6 +264,7 @@
             <div class="session-actions">
               <time>{{ calibration.display_updated_at }}</time>
               <button class="session-analyze-button" type="button" data-run-calibration-folder="{{ calibration.folder_name }}" data-calibration-record-mode="{{ calibration.mode }}">Calibration</button>
+              <button class="session-export-button" type="button" data-export-videos="{{ calibration.output_dir }}">Export</button>
               <button class="session-delete-button" type="button" data-delete-calibration-folder="{{ calibration.folder_name }}">Delete</button>
             </div>
           </header>
